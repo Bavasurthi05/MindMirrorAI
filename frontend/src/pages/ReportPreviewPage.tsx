@@ -1,33 +1,51 @@
+import { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Filler,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+import { Line, Bar } from 'react-chartjs-2';
 import { Button } from '../components/ui/button';
+import { useReportSummary } from '../lib/reports';
+import { useAnalyticsOverview } from '../lib/analytics';
+import { exportElementToPdf } from '../lib/pdf';
 
-const summaryCards = [
-  { label: 'Overall Wellness', value: '82/100' },
-  { label: 'Stress Trend', value: 'Low' },
-  { label: 'Recovery Score', value: '78%' },
-];
-
-const predictionSummary = [
-  'Mood pattern suggests a steady week with moderate energy.',
-  'Supportive habits appear to be improving overall resilience.',
-  'A small increase in rest consistency could strengthen calmness further.',
-];
-
-const triggerAnalysis = [
-  { title: 'Workload pressure', strength: 'High' },
-  { title: 'Sleep disruption', strength: 'Medium' },
-  { title: 'Social fatigue', strength: 'Low' },
-];
-
-const recommendations = [
-  'Continue the current journaling routine.',
-  'Add one short breathwork session after work hours.',
-  'Maintain a consistent evening wind-down ritual.',
-];
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Filler, Tooltip, Legend);
 
 export function ReportPreviewPage() {
+  const { data: report, isLoading } = useReportSummary();
+  const { data: analytics } = useAnalyticsOverview();
+  const reportRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const handleDownload = async () => {
+    if (!reportRef.current) return;
+    setExporting(true);
+    try {
+      await exportElementToPdf(reportRef.current, 'mindmirror-wellness-report.pdf');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const summaryCards = [
+    { label: 'Overall Wellness', value: report ? `${report.overallWellness}/100` : '—' },
+    { label: 'Stress Trend', value: report?.stressTrend ?? '—' },
+    { label: 'Recovery Score', value: report ? `${report.recoveryScore}%` : '—' },
+  ];
+  const predictionSummary = report?.predictionSummary ?? [];
+  const triggerAnalysis = (report?.topTriggers ?? []).map((t) => ({ title: t.title, strength: t.strength }));
+  const recommendations = report?.recommendations ?? [];
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" ref={reportRef}>
       <motion.section
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
@@ -39,11 +57,16 @@ export function ReportPreviewPage() {
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">PDF Report Preview</p>
             <h1 className="mt-2 text-3xl font-semibold text-slate-900">Preview your wellness report</h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-              This page presents a polished, placeholder report layout for future export workflows.
+              {isLoading ? 'Compiling your wellness report…' : 'A live snapshot of your wellbeing, aggregated from your activity.'}
             </p>
           </div>
-          <Button disabled className="w-full sm:w-auto">
-            Download Report
+          <Button
+            data-html2canvas-ignore
+            onClick={handleDownload}
+            disabled={isLoading || exporting || !report}
+            className="w-full sm:w-auto"
+          >
+            {exporting ? 'Generating…' : 'Download Report'}
           </Button>
         </div>
 
@@ -67,7 +90,7 @@ export function ReportPreviewPage() {
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Wellness Summary</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-900">What your current snapshot says</h2>
           <div className="mt-6 rounded-[1.4rem] border border-slate-200 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
-            Your recent reflections suggest a thoughtful balance between calm, motivation, and emotional awareness. The report preview highlights steady progress without overstating certainty.
+            {report?.summaryText ?? 'Your report will appear here once you start logging journals, moods, and check-ins.'}
           </div>
         </motion.section>
 
@@ -119,11 +142,49 @@ export function ReportPreviewPage() {
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
             <div className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
               <p className="text-sm font-semibold text-slate-900">Mood trend</p>
-              <div className="mt-3 h-20 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-500" />
+              <div className="mt-3">
+                {analytics && analytics.moodSeries.length > 0 ? (
+                  <Line
+                    data={{
+                      labels: analytics.moodSeries.map((p) => p.date.slice(5)),
+                      datasets: [
+                        {
+                          data: analytics.moodSeries.map((p) => p.score),
+                          borderColor: '#6366f1',
+                          backgroundColor: 'rgba(99, 102, 241, 0.15)',
+                          tension: 0.35,
+                          fill: true,
+                        },
+                      ],
+                    }}
+                    options={{ plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100 } } }}
+                  />
+                ) : (
+                  <div className="h-20 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-500" />
+                )}
+              </div>
             </div>
             <div className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
               <p className="text-sm font-semibold text-slate-900">Trigger intensity</p>
-              <div className="mt-3 h-20 rounded-xl bg-gradient-to-r from-amber-400 to-rose-500" />
+              <div className="mt-3">
+                {analytics && analytics.triggerDistribution.length > 0 ? (
+                  <Bar
+                    data={{
+                      labels: analytics.triggerDistribution.map((m) => m.label),
+                      datasets: [
+                        {
+                          data: analytics.triggerDistribution.map((m) => m.value),
+                          backgroundColor: '#f59e0b',
+                          borderRadius: 8,
+                        },
+                      ],
+                    }}
+                    options={{ plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100 } } }}
+                  />
+                ) : (
+                  <div className="h-20 rounded-xl bg-gradient-to-r from-amber-400 to-rose-500" />
+                )}
+              </div>
             </div>
           </div>
         </motion.section>

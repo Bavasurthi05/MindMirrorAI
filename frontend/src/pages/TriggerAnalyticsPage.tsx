@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Chart as ChartJS,
@@ -12,6 +13,9 @@ import {
   RadialLinearScale,
 } from 'chart.js';
 import { Pie, Bar } from 'react-chartjs-2';
+import { Button } from '../components/ui/button';
+import { useLogTrigger, useTriggerAnalytics, useTriggers } from '../lib/triggers';
+import { ApiError } from '../lib/api';
 
 ChartJS.register(
   ArcElement,
@@ -25,22 +29,7 @@ ChartJS.register(
   RadialLinearScale,
 );
 
-const triggerCards = [
-  { title: 'Workload pressure', value: 'High', detail: 'Most frequent trigger during late afternoon focus blocks.' },
-  { title: 'Sleep disruption', value: 'Medium', detail: 'Appears more often after inconsistent rest patterns.' },
-  { title: 'Social fatigue', value: 'Low', detail: 'Moderate impact when social energy drops after long stretches.' },
-];
-
-const pieData = {
-  labels: ['Workload', 'Sleep', 'Social', 'Routine'],
-  datasets: [
-    {
-      data: [42, 24, 18, 16],
-      backgroundColor: ['#6366f1', '#22d3ee', '#f59e0b', '#10b981'],
-      borderWidth: 0,
-    },
-  ],
-};
+const piePalette = ['#6366f1', '#22d3ee', '#f59e0b', '#10b981', '#fb7185', '#a78bfa', '#60a5fa'];
 
 const barData = {
   labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
@@ -74,12 +63,6 @@ const ranking = [
   { label: 'Routine drift', score: '5.9/10' },
 ];
 
-const recentTriggers = [
-  { title: 'Late afternoon focus dip', time: '12 min ago' },
-  { title: 'Interrupted sleep cycle', time: '45 min ago' },
-  { title: 'Reduced social energy', time: '1 hr ago' },
-];
-
 function getHeatCellClass(value: number) {
   if (value >= 4) return 'bg-rose-500';
   if (value === 3) return 'bg-amber-400';
@@ -87,7 +70,67 @@ function getHeatCellClass(value: number) {
   return 'bg-emerald-400';
 }
 
+const relativeTime = (iso: string) => {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const minutes = Math.round(diffMs / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.round(hours / 24);
+  return `${days} d ago`;
+};
+
+const triggerCategories = ['Workload', 'Sleep', 'Social', 'Routine', 'Health', 'Finance'];
+
 export function TriggerAnalyticsPage() {
+  const { data: analytics } = useTriggerAnalytics();
+  const { data: triggers = [] } = useTriggers();
+  const logTrigger = useLogTrigger();
+  const [category, setCategory] = useState(triggerCategories[0]);
+  const [intensity, setIntensity] = useState(5);
+  const [note, setNote] = useState('');
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const categories = analytics?.categories ?? [];
+
+  const triggerCards = categories.slice(0, 3).map((stat) => ({
+    title: stat.category,
+    value: `${stat.averageIntensity.toFixed(1)}/10`,
+    detail: `${stat.count} logged occurrence${stat.count === 1 ? '' : 's'}.`,
+  }));
+
+  const pieData = useMemo(
+    () => ({
+      labels: categories.map((stat) => stat.category),
+      datasets: [
+        {
+          data: categories.map((stat) => stat.count),
+          backgroundColor: categories.map((_, i) => piePalette[i % piePalette.length]),
+          borderWidth: 0,
+        },
+      ],
+    }),
+    [categories],
+  );
+
+  const recentTriggers = triggers.slice(0, 5).map((entry) => ({
+    title: `${entry.category} · intensity ${entry.intensity}`,
+    time: relativeTime(entry.occurredAt),
+  }));
+
+  const handleLog = async () => {
+    setFeedback(null);
+    try {
+      await logTrigger.mutateAsync({ category, intensity, note: note.trim() || undefined });
+      setNote('');
+      setFeedback({ type: 'success', text: 'Trigger logged.' });
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'Unable to log trigger. Please try again.';
+      setFeedback({ type: 'error', text });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <motion.section
@@ -101,23 +144,69 @@ export function TriggerAnalyticsPage() {
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Trigger Analytics</p>
             <h1 className="mt-2 text-3xl font-semibold text-slate-900">A calm view of emotional pressure points</h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-              This mock analytics page highlights recurring stress triggers using attractive visuals and dummy values.
+              Track recurring stress triggers, log new ones, and see how they distribute across categories.
             </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            <p className="font-semibold text-slate-900">Current focus</p>
-            <p>Workload pressure</p>
+            <p className="font-semibold text-slate-900">Total logged</p>
+            <p>{analytics?.totalCount ?? 0} triggers · avg {analytics?.averageIntensity ?? 0}/10</p>
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
-          {triggerCards.map((card) => (
-            <div key={card.title} className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-5">
-              <p className="text-sm font-semibold text-slate-900">{card.title}</p>
-              <p className="mt-2 text-xl font-semibold text-indigo-600">{card.value}</p>
-              <p className="mt-2 text-sm leading-6 text-slate-600">{card.detail}</p>
+        <div className="mt-6 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5">
+          <p className="text-sm font-semibold text-slate-900">Log a trigger</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+            <select
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500"
+            >
+              {triggerCategories.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
+              <span>Intensity</span>
+              <input
+                type="range"
+                min={1}
+                max={10}
+                value={intensity}
+                onChange={(event) => setIntensity(Number(event.target.value))}
+              />
+              <span className="w-6 text-center font-semibold text-slate-900">{intensity}</span>
             </div>
-          ))}
+            <Button type="button" onClick={handleLog} disabled={logTrigger.isPending}>
+              {logTrigger.isPending ? 'Saving…' : 'Log'}
+            </Button>
+          </div>
+          <input
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Optional note…"
+            className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500"
+          />
+          {feedback ? (
+            <p className={`mt-3 text-sm ${feedback.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
+              {feedback.text}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          {triggerCards.length > 0 ? (
+            triggerCards.map((card) => (
+              <div key={card.title} className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-5">
+                <p className="text-sm font-semibold text-slate-900">{card.title}</p>
+                <p className="mt-2 text-xl font-semibold text-indigo-600">{card.value}</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{card.detail}</p>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-slate-500">No triggers logged yet. Add one above to see analytics.</p>
+          )}
         </div>
       </motion.section>
 

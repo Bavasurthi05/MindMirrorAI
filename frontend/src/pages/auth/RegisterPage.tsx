@@ -1,7 +1,10 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AuthCard } from '../../components/auth/AuthCard';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
+import { useAuth } from '../../context/AuthContext';
+import { ApiError } from '../../lib/api';
 
 interface RegisterErrors {
   name?: string;
@@ -21,6 +24,9 @@ export function RegisterPage() {
   });
   const [errors, setErrors] = useState<RegisterErrors>({});
   const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const { register } = useAuth();
+  const navigate = useNavigate();
 
   const validate = () => {
     const nextErrors: RegisterErrors = {};
@@ -55,12 +61,30 @@ export function RegisterPage() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setMessage('');
 
-    if (validate()) {
-      setMessage('Front-end validation passed. Account creation flow can be wired to an API later.');
+    if (!validate()) return;
+
+    const trimmedName = form.name.trim();
+    const [firstName, ...rest] = trimmedName.split(/\s+/);
+    const lastName = rest.join(' ') || firstName;
+
+    setSubmitting(true);
+    try {
+      await register({
+        firstName,
+        lastName,
+        email: form.email.trim(),
+        password: form.password,
+      });
+      navigate('/dashboard', { replace: true });
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'Unable to create account. Please try again.';
+      setMessage(text);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -134,10 +158,10 @@ export function RegisterPage() {
         </label>
         {errors.terms ? <p className="-mt-2 text-xs text-rose-600">{errors.terms}</p> : null}
 
-        {message ? <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+        {message ? <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{message}</p> : null}
 
-        <Button type="submit" className="w-full">
-          Create account
+        <Button type="submit" className="w-full" disabled={submitting}>
+          {submitting ? 'Creating account…' : 'Create account'}
         </Button>
       </form>
     </AuthCard>

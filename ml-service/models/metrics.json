@@ -1,0 +1,24 @@
+{
+  "labels": [
+    "normal",
+    "stress",
+    "anxiety",
+    "depression"
+  ],
+  "train_size": 24,
+  "test_size": 8,
+  "models": {
+    "random_forest": {
+      "name": "TF-IDF + Random Forest",
+      "accuracy": 0.75,
+      "f1_macro": 0.7333,
+      "deployed": true
+    },
+    "logistic_regression": {
+      "name": "TF-IDF + Logistic Regression (baseline)",
+      "accuracy": 0.5,
+      "f1_macro": 0.3333,
+      "deployed": false
+    }
+  }
+}

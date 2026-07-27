@@ -11,14 +11,15 @@ import {
   Legend,
 } from 'chart.js';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
+import { useAdminOverview } from '../lib/admin';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend);
 
-const analyticsCards = [
-  { label: 'Total Users', value: '12,480', detail: '+8.2% from last month' },
-  { label: 'Total Predictions', value: '8,930', detail: '+14.6% from last month' },
-  { label: 'Wellness Statistics', value: '81%', detail: 'Average wellbeing score' },
-  { label: 'Trigger Analytics', value: '24', detail: 'Active trigger clusters' },
+const analyticsCardsFallback = [
+  { label: 'Total Users', value: '—', detail: 'Registered accounts' },
+  { label: 'Verified Users', value: '—', detail: 'Confirmed emails' },
+  { label: 'Journal Entries', value: '—', detail: 'Across all users' },
+  { label: 'Assessments', value: '—', detail: 'Completed check-ins' },
 ];
 
 const growthData = {
@@ -65,6 +66,17 @@ const weeklyReports = [
 ];
 
 export function AdminDashboardPage() {
+  const { data: overview } = useAdminOverview();
+
+  const analyticsCards = overview
+    ? [
+        { label: 'Total Users', value: `${overview.totalUsers}`, detail: `${overview.verifiedUsers} verified` },
+        { label: 'Journal Entries', value: `${overview.totalJournalEntries}`, detail: 'Across all users' },
+        { label: 'Mood Check-ins', value: `${overview.totalMoodEntries}`, detail: 'Logged moods' },
+        { label: 'Assessments', value: `${overview.totalAssessments}`, detail: 'Completed questionnaires' },
+      ]
+    : analyticsCardsFallback;
+
   return (
     <div className="space-y-6">
       <motion.section

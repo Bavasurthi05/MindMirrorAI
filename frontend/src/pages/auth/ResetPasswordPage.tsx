@@ -1,7 +1,10 @@
 import { useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthCard } from '../../components/auth/AuthCard';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
+import { resetPassword } from '../../lib/auth-service';
+import { ApiError } from '../../lib/api';
 
 interface ResetErrors {
   password?: string;
@@ -12,6 +15,11 @@ export function ResetPasswordPage() {
   const [form, setForm] = useState({ password: '', confirmPassword: '' });
   const [errors, setErrors] = useState<ResetErrors>({});
   const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const token = searchParams.get('token') ?? '';
 
   const validate = () => {
     const nextErrors: ResetErrors = {};
@@ -32,12 +40,27 @@ export function ResetPasswordPage() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setMessage('');
+    setError('');
 
-    if (validate()) {
-      setMessage('Password reset preview accepted. Your new credentials are ready for API integration.');
+    if (!token) {
+      setError('This reset link is missing its token. Please request a new one.');
+      return;
+    }
+
+    if (!validate()) return;
+
+    setSubmitting(true);
+    try {
+      await resetPassword(token, form.password);
+      setMessage('Your password has been updated. Redirecting to sign in…');
+      setTimeout(() => navigate('/login', { replace: true }), 1500);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Unable to reset password. Please try again.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -75,9 +98,10 @@ export function ResetPasswordPage() {
         />
 
         {message ? <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+        {error ? <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
 
-        <Button type="submit" className="w-full">
-          Update password
+        <Button type="submit" className="w-full" disabled={submitting}>
+          {submitting ? 'Updating…' : 'Update password'}
         </Button>
       </form>
     </AuthCard>

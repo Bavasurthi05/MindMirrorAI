@@ -10,10 +10,15 @@ const navItems = [
   { label: 'Dashboard', to: '/dashboard' },
   { label: 'Journal', to: '/journal' },
   { label: 'Questionnaire', to: '/questionnaire' },
+  { label: 'Social Media', to: '/social-analysis' },
   { label: 'Mirror', to: '/mirror' },
-  { label: 'Insights', to: '/insights' },
+  { label: 'Analytics', to: '/analytics' },
+  { label: 'Insights', to: '/weekly-insights' },
   { label: 'Reports', to: '/reports' },
-  { label: 'Profile', to: '/profile' },
+  { label: 'Goals & Profile', to: '/profile' },
+  { label: 'Feedback', to: '/feedback' },
+  { label: 'Emergency Help', to: '/help' },
+  { label: 'Settings', to: '/settings' },
 ];
 
 const adminItems = [{ label: 'Admin', to: '/admin' }];

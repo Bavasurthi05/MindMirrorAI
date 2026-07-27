@@ -2,7 +2,6 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { PublicLayout } from './components/layout/PublicLayout';
 import { ProtectedLayout } from './components/layout/ProtectedLayout';
 import { AdminLayout } from './components/layout/AdminLayout';
-import { PlaceholderPage } from './pages/PlaceholderPage';
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/auth/LoginPage';
 import { RegisterPage } from './pages/auth/RegisterPage';
@@ -19,6 +18,15 @@ import { RecoveryPlanPage } from './pages/RecoveryPlanPage';
 import { MoodTimelinePage } from './pages/MoodTimelinePage';
 import { ReportPreviewPage } from './pages/ReportPreviewPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
+import { PredictionResultsPage } from './pages/PredictionResultsPage';
+import { SocialMediaAnalysisPage } from './pages/SocialMediaAnalysisPage';
+import { AnalyticsPage } from './pages/AnalyticsPage';
+import { WeeklyInsightsPage } from './pages/WeeklyInsightsPage';
+import { EmergencyHelpPage } from './pages/EmergencyHelpPage';
+import { FeedbackPage } from './pages/FeedbackPage';
+import { ProfilePage } from './pages/ProfilePage';
+import { SettingsPage } from './pages/SettingsPage';
+import { AdminAnalyticsPage } from './pages/AdminAnalyticsPage';
 
 function App() {
   return (
@@ -37,20 +45,24 @@ function App() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/journal" element={<JournalPage />} />
         <Route path="/questionnaire" element={<QuestionnairePage />} />
+        <Route path="/social-analysis" element={<SocialMediaAnalysisPage />} />
         <Route path="/mirror" element={<MirrorPage />} />
-        <Route path="/prediction-results" element={<PlaceholderPage title="Prediction Results" description="See AI-driven analysis outcomes." />} />
+        <Route path="/prediction-results" element={<PredictionResultsPage />} />
         <Route path="/trigger-analytics" element={<TriggerAnalyticsPage />} />
         <Route path="/mood-timeline" element={<MoodTimelinePage />} />
-        <Route path="/weekly-insights" element={<PlaceholderPage title="Weekly Insights" description="View AI-driven weekly wellness summaries." />} />
+        <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/weekly-insights" element={<WeeklyInsightsPage />} />
         <Route path="/recommendations" element={<RecoveryPlanPage />} />
         <Route path="/reports" element={<ReportPreviewPage />} />
-        <Route path="/profile" element={<PlaceholderPage title="Profile" description="Manage user details and preferences." />} />
-        <Route path="/settings" element={<PlaceholderPage title="Settings" description="Adjust application preferences and privacy controls." />} />
+        <Route path="/help" element={<EmergencyHelpPage />} />
+        <Route path="/feedback" element={<FeedbackPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Route>
 
       <Route element={<AdminLayout />}>
         <Route path="/admin" element={<AdminDashboardPage />} />
-        <Route path="/admin/analytics" element={<PlaceholderPage title="Admin Analytics" description="Monitor trends, usage, and system health." />} />
+        <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

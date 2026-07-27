@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '../components/ui/button';
+import { useSubmitQuestionnaire, type QuestionnaireResult } from '../lib/questionnaire';
+import { ApiError } from '../lib/api';
 
 const questions = [
   {
@@ -29,6 +31,9 @@ export function QuestionnairePage() {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<string[]>(Array(questions.length).fill(''));
   const [submitted, setSubmitted] = useState(false);
+  const [result, setResult] = useState<QuestionnaireResult | null>(null);
+  const [error, setError] = useState('');
+  const submitQuestionnaire = useSubmitQuestionnaire();
 
   const currentQuestion = questions[step];
   const progress = useMemo(() => ((step + 1) / questions.length) * 100, [step]);
@@ -39,12 +44,30 @@ export function QuestionnairePage() {
     setAnswers(updated);
   };
 
+  const finalize = async (finalAnswers: string[]) => {
+    setError('');
+    const answerIndices = finalAnswers.map((answer, index) =>
+      Math.max(0, questions[index].options.indexOf(answer)),
+    );
+    try {
+      const response = await submitQuestionnaire.mutateAsync({
+        questionnaireKey: 'wellbeing',
+        answers: answerIndices,
+        optionsPerQuestion: 4,
+      });
+      setResult(response);
+      setSubmitted(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Unable to submit your assessment. Please try again.');
+    }
+  };
+
   const handleNext = () => {
     if (!answers[step]) return;
     if (step < questions.length - 1) {
       setStep(step + 1);
     } else {
-      setSubmitted(true);
+      void finalize(answers);
     }
   };
 
@@ -56,6 +79,8 @@ export function QuestionnairePage() {
     setStep(0);
     setAnswers(Array(questions.length).fill(''));
     setSubmitted(false);
+    setResult(null);
+    setError('');
   };
 
   if (submitted) {
@@ -73,8 +98,22 @@ export function QuestionnairePage() {
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Completion</p>
           <h1 className="mt-2 text-3xl font-semibold text-slate-900">Questionnaire complete</h1>
           <p className="mt-3 text-sm leading-7 text-slate-600">
-            This mock questionnaire is complete. No backend processing or API call was used.
+            Your responses have been securely recorded. Here is a snapshot of your current wellbeing.
           </p>
+          {result ? (
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-left">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-slate-600">Wellbeing status</span>
+                <span className="rounded-full bg-indigo-600 px-3 py-1 text-sm font-semibold text-white">
+                  {result.severity}
+                </span>
+              </div>
+              <p className="mt-3 text-3xl font-semibold text-slate-900">
+                {result.totalScore}
+                <span className="text-base font-medium text-slate-500"> / {result.maxScore}</span>
+              </p>
+            </div>
+          ) : null}
           <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left text-sm text-slate-600">
             <p className="font-semibold text-slate-900">Your responses</p>
             <ul className="mt-3 space-y-2">
@@ -147,12 +186,14 @@ export function QuestionnairePage() {
               Next
             </Button>
           ) : (
-            <Button onClick={handleNext} disabled={!answers[step]}>
-              Submit
+            <Button onClick={handleNext} disabled={!answers[step] || submitQuestionnaire.isPending}>
+              {submitQuestionnaire.isPending ? 'Submitting…' : 'Submit'}
             </Button>
           )}
         </div>
       </div>
+
+      {error ? <p className="mt-4 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
     </motion.div>
   );
 }

@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '../components/ui/button';
+import { useCreateJournalEntry, useJournalEntries } from '../lib/journal';
+import { ApiError } from '../lib/api';
 
 const moodOptions = [
   { value: 'calm', label: 'Calm', emoji: '🌿' },
@@ -9,31 +11,20 @@ const moodOptions = [
   { value: 'overwhelmed', label: 'Overwhelmed', emoji: '🌧️' },
 ];
 
-const previousEntries = [
-  {
-    title: 'Evening reset after a long day',
-    date: 'Jul 10, 2026',
-    mood: 'Reflective',
-    excerpt: 'I noticed how a few minutes of silence helped me settle before sleep.',
-  },
-  {
-    title: 'A grounded morning routine',
-    date: 'Jul 08, 2026',
-    mood: 'Calm',
-    excerpt: 'The simple act of stretching and journaling made the day feel lighter.',
-  },
-  {
-    title: 'A burst of clarity after work',
-    date: 'Jul 06, 2026',
-    mood: 'Energized',
-    excerpt: 'I felt more focused once I stepped away from the screen and took a walk.',
-  },
-];
+const dateFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: '2-digit',
+  year: 'numeric',
+});
 
 export function JournalPage() {
   const [content, setContent] = useState('');
   const [mood, setMood] = useState('calm');
   const [title, setTitle] = useState('');
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const { data: entriesPage, isLoading: isLoadingEntries } = useJournalEntries(0, 10);
+  const createEntry = useCreateJournalEntry();
 
   const stats = useMemo(() => {
     const words = content.trim().split(/\s+/).filter(Boolean).length;
@@ -41,13 +32,31 @@ export function JournalPage() {
     return { words, characters };
   }, [content]);
 
-  const handleDraft = () => {
-    // Mock-only action: no API call.
-    alert('Draft saved locally for this preview.');
+  const resetForm = () => {
+    setTitle('');
+    setContent('');
+    setMood('calm');
   };
 
-  const handleSubmit = () => {
-    alert('Entry submitted for preview. No backend connection is involved.');
+  const handleDraft = () => {
+    setFeedback({ type: 'success', text: 'Draft kept in this editor. Submit to save it to your journal.' });
+  };
+
+  const handleSubmit = async () => {
+    setFeedback(null);
+    if (!title.trim() || !content.trim()) {
+      setFeedback({ type: 'error', text: 'Please add a title and some content before submitting.' });
+      return;
+    }
+
+    try {
+      await createEntry.mutateAsync({ title: title.trim(), content: content.trim(), mood });
+      resetForm();
+      setFeedback({ type: 'success', text: 'Your journal entry has been saved.' });
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'Unable to save your entry. Please try again.';
+      setFeedback({ type: 'error', text });
+    }
   };
 
   return (
@@ -63,7 +72,7 @@ export function JournalPage() {
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Journal</p>
             <h1 className="mt-2 text-3xl font-semibold text-slate-900">Write your reflections</h1>
             <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-600">
-              Capture your thoughts in a calm editor with mood-aware context and mock persistence for the UI preview.
+              Capture your thoughts in a calm editor with mood-aware context. Entries are saved securely to your account.
             </p>
           </div>
           <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
@@ -126,12 +135,26 @@ export function JournalPage() {
                 <p>{stats.words} words</p>
               </div>
               <div className="flex gap-2">
-                <Button variant="secondary" onClick={handleDraft}>
+                <Button variant="secondary" onClick={handleDraft} type="button">
                   Save draft
                 </Button>
-                <Button onClick={handleSubmit}>Submit</Button>
+                <Button onClick={handleSubmit} type="button" disabled={createEntry.isPending}>
+                  {createEntry.isPending ? 'Saving…' : 'Submit'}
+                </Button>
               </div>
             </div>
+
+            {feedback ? (
+              <p
+                className={`rounded-2xl px-4 py-3 text-sm ${
+                  feedback.type === 'success'
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'bg-rose-50 text-rose-700'
+                }`}
+              >
+                {feedback.text}
+              </p>
+            ) : null}
           </div>
 
           <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5">
@@ -143,18 +166,32 @@ export function JournalPage() {
             </div>
 
             <div className="mt-5 space-y-3">
-              {previousEntries.map((entry) => (
-                <div key={entry.title} className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="font-semibold text-slate-900">{entry.title}</p>
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                      {entry.mood}
-                    </span>
+              {isLoadingEntries ? (
+                <p className="text-sm text-slate-500">Loading your entries…</p>
+              ) : entriesPage && entriesPage.content.length > 0 ? (
+                entriesPage.content.map((entry) => (
+                  <div key={entry.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-semibold text-slate-900">{entry.title}</p>
+                      {entry.mood ? (
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                          {entry.mood}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-2 text-sm text-slate-500">
+                      {dateFormatter.format(new Date(entry.createdAt))}
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                      {entry.content.length > 160 ? `${entry.content.slice(0, 160)}…` : entry.content}
+                    </p>
                   </div>
-                  <p className="mt-2 text-sm text-slate-500">{entry.date}</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">{entry.excerpt}</p>
-                </div>
-              ))}
+                ))
+              ) : (
+                <p className="text-sm text-slate-500">
+                  No entries yet. Write your first reflection to see it here.
+                </p>
+              )}
             </div>
           </div>
         </div>

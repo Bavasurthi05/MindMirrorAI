@@ -1,0 +1,2 @@
+# Trained model binary — regenerate with `python -m app.train`
+pipeline.joblib

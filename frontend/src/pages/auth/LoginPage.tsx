@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AuthCard } from '../../components/auth/AuthCard';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
+import { useAuth } from '../../context/AuthContext';
+import { ApiError } from '../../lib/api';
 
 interface LoginErrors {
   email?: string;
@@ -13,6 +15,11 @@ export function LoginPage() {
   const [form, setForm] = useState({ email: '', password: '', rememberMe: false });
   const [errors, setErrors] = useState<LoginErrors>({});
   const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const { login } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const redirectTo = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/dashboard';
 
   const validate = () => {
     const nextErrors: LoginErrors = {};
@@ -33,12 +40,21 @@ export function LoginPage() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setMessage('');
 
-    if (validate()) {
-      setMessage('Front-end validation passed. Authentication API can be connected later.');
+    if (!validate()) return;
+
+    setSubmitting(true);
+    try {
+      await login({ email: form.email.trim(), password: form.password });
+      navigate(redirectTo, { replace: true });
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'Unable to sign in. Please try again.';
+      setMessage(text);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -90,10 +106,10 @@ export function LoginPage() {
           </Link>
         </div>
 
-        {message ? <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+        {message ? <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{message}</p> : null}
 
-        <Button type="submit" className="w-full">
-          Sign in
+        <Button type="submit" className="w-full" disabled={submitting}>
+          {submitting ? 'Signing in…' : 'Sign in'}
         </Button>
       </form>
     </AuthCard>

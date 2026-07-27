@@ -12,4 +12,5 @@ import org.springframework.stereotype.Component;
 public class JwtProperties {
     private String secret;
     private Long expirationMs;
+    private Long refreshExpirationMs = 604800000L;
 }

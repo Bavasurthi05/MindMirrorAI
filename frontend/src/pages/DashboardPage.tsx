@@ -1,5 +1,7 @@
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
+import { useProfile } from '../lib/profile';
+import { useGoals } from '../lib/goals';
 
 const quickActions = [
   { title: 'New journal entry', to: '/journal', icon: '📝' },
@@ -36,8 +38,39 @@ const progressItems = [
 ];
 
 export function DashboardPage() {
+  const { data: profile } = useProfile();
+  const { data: goals } = useGoals();
+
   return (
     <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <p className="text-sm text-slate-500 dark:text-slate-400">🔥 Journal streak</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-white">
+            {profile ? `${profile.journalStreak} day${profile.journalStreak === 1 ? '' : 's'}` : '—'}
+          </p>
+        </div>
+        <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <p className="text-sm text-slate-500 dark:text-slate-400">📝 Journal entries</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-white">{profile?.journalCount ?? '—'}</p>
+        </div>
+        <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <p className="text-sm text-slate-500 dark:text-slate-400">🎯 Goals completed</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-white">
+            {profile ? `${profile.goalsCompleted}/${profile.goalsTotal}` : '—'}
+          </p>
+        </div>
+        <Link
+          to="/profile"
+          className="flex flex-col justify-center rounded-[1.5rem] border border-indigo-200 bg-indigo-50 p-5 shadow-sm transition hover:border-indigo-300 dark:border-indigo-900/50 dark:bg-indigo-950/40"
+        >
+          <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-200">View goals &amp; streaks →</p>
+          <p className="mt-1 text-xs text-indigo-500 dark:text-indigo-300">
+            {goals ? `${goals.length} active goal${goals.length === 1 ? '' : 's'}` : 'Manage your goals'}
+          </p>
+        </Link>
+      </div>
+
       <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <motion.section
           initial={{ opacity: 0, y: 14 }}

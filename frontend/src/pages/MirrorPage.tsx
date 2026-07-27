@@ -1,22 +1,8 @@
 import { motion } from 'framer-motion';
+import { useAnalyticsOverview } from '../lib/analytics';
 
-const radarValues = [82, 68, 74, 79, 88, 71];
-const metrics = [
-  { label: 'Wellness Score', value: '82%', tone: 'from-cyan-500 to-indigo-500' },
-  { label: 'Stress Level', value: 'Low', tone: 'from-amber-400 to-orange-500' },
-  { label: 'Anxiety Level', value: 'Moderate', tone: 'from-fuchsia-500 to-violet-500' },
-  { label: 'Happiness', value: 'High', tone: 'from-emerald-500 to-teal-500' },
-  { label: 'Confidence', value: 'Strong', tone: 'from-sky-500 to-blue-500' },
-  { label: 'Motivation', value: 'Steady', tone: 'from-rose-500 to-pink-500' },
-  { label: 'Sleep Quality', value: '7.8/10', tone: 'from-indigo-500 to-violet-500' },
-  { label: 'Social Interaction', value: 'Balanced', tone: 'from-lime-500 to-green-500' },
-];
-
-const circularStats = [
-  { label: 'Recovery', value: 81 },
-  { label: 'Resilience', value: 76 },
-  { label: 'Balance', value: 84 },
-];
+const RADAR_LABELS = ['Stress', 'Confidence', 'Sleep', 'Motivation', 'Social', 'Happiness'];
+const DEFAULT_RADAR = [82, 68, 74, 79, 88, 71];
 
 function CircularProgress({ value, label }: { value: number; label: string }) {
   const radius = 42;
@@ -56,6 +42,29 @@ function CircularProgress({ value, label }: { value: number; label: string }) {
 }
 
 export function MirrorPage() {
+  const { data } = useAnalyticsOverview();
+
+  const radarByLabel = new Map((data?.radar ?? []).map((m) => [m.label, m.value]));
+  const radarValues = RADAR_LABELS.map((label, index) =>
+    radarByLabel.has(label) ? (radarByLabel.get(label) as number) : DEFAULT_RADAR[index],
+  );
+  const overallWellness = data?.overallWellness ?? 82;
+
+  const metrics = [
+    { label: 'Wellness Score', value: `${overallWellness}%`, tone: 'from-cyan-500 to-indigo-500' },
+    ...RADAR_LABELS.map((label, index) => ({
+      label,
+      value: `${radarValues[index]}%`,
+      tone: 'from-indigo-500 to-violet-500',
+    })),
+  ];
+
+  const circularStats = [
+    { label: 'Happiness', value: Math.round(radarByLabel.get('Happiness') ?? DEFAULT_RADAR[5]) },
+    { label: 'Confidence', value: Math.round(radarByLabel.get('Confidence') ?? DEFAULT_RADAR[1]) },
+    { label: 'Motivation', value: Math.round(radarByLabel.get('Motivation') ?? DEFAULT_RADAR[3]) },
+  ];
+
   return (
     <div className="space-y-6">
       <motion.section
@@ -69,11 +78,12 @@ export function MirrorPage() {
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-300">Mental Health Digital Mirror</p>
             <h1 className="mt-2 text-3xl font-semibold">A reflective view of your inner wellbeing</h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300">
-              This experience presents a modern, visually rich summary of wellbeing indicators using carefully chosen dummy values.
+              A modern, visually rich summary of your wellbeing indicators, derived from your recent check-ins,
+              triggers, and assessments.
             </p>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-center backdrop-blur">
-            <p className="text-4xl font-semibold">82</p>
+            <p className="text-4xl font-semibold">{overallWellness}</p>
             <p className="text-sm text-slate-300">Overall wellness</p>
           </div>
         </div>
@@ -119,7 +129,7 @@ export function MirrorPage() {
                   stroke="#6366f1"
                   strokeWidth="3"
                 />
-                {['Balance', 'Sleep', 'Stress', 'Mood', 'Confidence', 'Energy'].map((label, index) => {
+                {RADAR_LABELS.map((label, index) => {
                   const angle = (Math.PI / 3) * index - Math.PI / 2;
                   const x = 120 + Math.cos(angle) * 105;
                   const y = 120 + Math.sin(angle) * 105;

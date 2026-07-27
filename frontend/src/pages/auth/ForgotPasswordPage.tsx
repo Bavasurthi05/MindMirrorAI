@@ -2,13 +2,16 @@ import { useState } from 'react';
 import { AuthCard } from '../../components/auth/AuthCard';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
+import { forgotPassword } from '../../lib/auth-service';
+import { ApiError } from '../../lib/api';
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
     setMessage('');
@@ -23,7 +26,15 @@ export function ForgotPasswordPage() {
       return;
     }
 
-    setMessage('A recovery link preview would be sent to your inbox.');
+    setSubmitting(true);
+    try {
+      await forgotPassword(email.trim());
+      setMessage('If an account exists for that email, a reset link is on its way.');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -49,8 +60,8 @@ export function ForgotPasswordPage() {
 
         {message ? <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
 
-        <Button type="submit" className="w-full">
-          Send recovery link
+        <Button type="submit" className="w-full" disabled={submitting}>
+          {submitting ? 'Sending…' : 'Send recovery link'}
         </Button>
       </form>
     </AuthCard>
