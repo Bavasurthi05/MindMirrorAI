@@ -86,6 +86,8 @@ class ModelMetricsResponse(BaseModel):
     available: bool
     backend: str
     labels: List[str] = Field(default_factory=list)
+    emotion_labels: List[str] = Field(default_factory=list)
     train_size: int = 0
     test_size: int = 0
+    dataset_profile: Dict[str, object] = Field(default_factory=dict)
     models: Dict[str, ModelInfo] = Field(default_factory=dict)

@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 
 from . import ml_models
@@ -8,6 +10,7 @@ from .analysis import (
     predict_mental_state,
     predict_mood,
 )
+from .seed_data import DATASET_PROFILE
 from .schemas import (
     DetectedTrigger,
     FeatureReason,
@@ -26,11 +29,39 @@ from .schemas import (
 )
 
 app = FastAPI(title="Mental Health ML Service", version="0.3.0")
+logger = logging.getLogger(__name__)
+
+
+def _dataset_runtime_summary() -> dict:
+    training_size = int(DATASET_PROFILE.get("training_samples_used", 0))
+    source_size = int(DATASET_PROFILE.get("source_dataset_size", 0))
+    mode = "full" if source_size > 0 and training_size >= source_size else "reduced"
+    return {
+        "mode": mode,
+        "training_samples": training_size,
+        "source_samples": source_size,
+        "emotion_label_count": len(DATASET_PROFILE.get("emotion_labels", [])),
+    }
+
+
+@app.on_event("startup")
+def log_dataset_profile() -> None:
+    dataset = _dataset_runtime_summary()
+    logger.info(
+        "ML dataset profile loaded: mode=%s training_samples=%s source_samples=%s labels=%s",
+        dataset["mode"],
+        dataset["training_samples"],
+        dataset["source_samples"],
+        dataset["emotion_label_count"],
+    )
 
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "dataset": _dataset_runtime_summary(),
+    }
 
 
 def _build_analysis(text: str) -> JournalAnalysisResponse:
@@ -76,8 +107,10 @@ def model_metrics() -> ModelMetricsResponse:
         available=ml_models.is_available(),
         backend="random_forest" if ml_models.is_available() else "heuristic",
         labels=metrics.get("labels", []),
+        emotion_labels=metrics.get("emotion_labels", []),
         train_size=metrics.get("train_size", 0),
         test_size=metrics.get("test_size", 0),
+        dataset_profile=metrics.get("dataset_profile", {}),
         models=models,
     )
 

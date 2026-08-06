@@ -11,6 +11,7 @@ from collections import Counter
 from typing import Dict, List, Optional, Tuple
 
 from . import ml_models
+from .seed_data import EMOTION_TO_STATE
 
 POSITIVE_WORDS = {
     "calm", "happy", "grateful", "hopeful", "relaxed", "energized", "content",
@@ -25,11 +26,36 @@ NEGATIVE_WORDS = {
 }
 
 EMOTION_LEXICON: Dict[str, set[str]] = {
-    "joy": {"happy", "joy", "joyful", "grateful", "hopeful", "content", "proud", "excited"},
-    "calm": {"calm", "relaxed", "peaceful", "rested", "balanced", "settled"},
-    "sadness": {"sad", "lonely", "hopeless", "down", "empty", "numb", "cry"},
-    "anger": {"angry", "frustrated", "irritated", "annoyed", "resentful"},
+    "admiration": {"admire", "impressed", "respect", "inspired"},
+    "amusement": {"amused", "funny", "laugh", "hilarious"},
+    "anger": {"angry", "furious", "mad", "irate"},
+    "annoyance": {"annoyed", "irritated", "bothered", "fed up"},
+    "approval": {"approve", "agree", "support", "valid"},
+    "caring": {"care", "concerned", "compassion", "protective"},
+    "confusion": {"confused", "unsure", "lost", "puzzled"},
+    "curiosity": {"curious", "wondering", "interested", "intrigued"},
+    "desire": {"want", "longing", "eager", "craving"},
+    "disappointment": {"disappointed", "let down", "discouraged", "deflated"},
+    "disapproval": {"disapprove", "critical", "against", "unacceptable"},
+    "disgust": {"disgusted", "gross", "repulsed", "sickened"},
+    "embarrassment": {"embarrassed", "awkward", "ashamed", "self-conscious"},
+    "excitement": {"excited", "thrilled", "hyped", "pumped"},
     "fear": {"anxious", "worried", "afraid", "scared", "panic", "nervous", "tense"},
+    "gratitude": {"grateful", "thankful", "appreciative", "blessed"},
+    "grief": {"grieving", "heartbroken", "mourning", "devastated"},
+    "joy": {"happy", "joy", "joyful", "delighted", "cheerful"},
+    "love": {"love", "adore", "affection", "cared"},
+    "nervousness": {"nervous", "jittery", "on edge", "uneasy"},
+    "optimism": {"hopeful", "optimistic", "positive", "encouraged"},
+    "pride": {"proud", "accomplished", "confident", "satisfied"},
+    "realization": {"realized", "clicked", "understood", "aware"},
+    "relief": {"relieved", "calmer", "at ease", "unburdened"},
+    "remorse": {"sorry", "regret", "guilty", "remorseful"},
+    "sadness": {"sad", "lonely", "hopeless", "down", "empty", "numb", "cry"},
+    "surprise": {"surprised", "shocked", "stunned", "unexpected"},
+    "neutral": {"neutral", "fine", "steady", "okay"},
+    # Legacy auxiliary emotions retained for smoother fallback behavior.
+    "calm": {"calm", "relaxed", "peaceful", "rested", "balanced", "settled"},
     "fatigue": {"tired", "exhausted", "drained", "restless", "overwhelmed"},
 }
 
@@ -135,13 +161,9 @@ def predict_mood(recent_scores: List[int]) -> Tuple[float, str, float, str]:
 
 # Maps sentiment/emotion signals to a state label when no trained model is present.
 _HEURISTIC_STATE_BY_EMOTION: Dict[str, str] = {
-    "sadness": "depression",
-    "fear": "anxiety",
-    "fatigue": "stress",
-    "anger": "stress",
-    "joy": "normal",
+    **EMOTION_TO_STATE,
     "calm": "normal",
-    "neutral": "normal",
+    "fatigue": "stress",
 }
 
 

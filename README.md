@@ -85,15 +85,23 @@ Responsive design.
 The ML module implements the classic pipeline **Text Cleaning → Tokenization → TF‑IDF → Random Forest**,
 with a **Logistic Regression baseline** for an accuracy comparison (surfaced in the Admin panel).
 
-- **Training:** `python -m app.train` builds the model from a seed dataset and writes
+- **Training:** `python -m app.train` builds the model from a GoEmotions-style synthetic corpus and writes
   `models/pipeline.joblib` + `models/metrics.json`. The Docker image trains at build time.
+- **Dataset profile:** the synthetic source corpus covers 27 emotion labels and ~58k comments,
+  then maps to MindMirror's 4 prediction states for deployment compatibility.
+- **Scale control:** set `ML_SYNTHETIC_TRAINING_SAMPLES` (default `58320`) to trade off
+  training speed vs corpus size. For faster local iteration, set it to `12000`.
+- **Runtime visibility:** on startup, the ML service logs dataset mode (`full`/`reduced`) and
+  active sample counts. The same summary is returned by `GET /health`.
 - **Explainability:** predictions return a normalized per‑feature contribution breakdown. SHAP is used
   when installed, falling back to Random Forest feature importances.
 - **Graceful fallback:** if the trained model or heavy dependencies are unavailable, the service uses a
   transparent lexicon/heuristic baseline so it always runs.
+- **Admin observability:** model metrics now include emotion-label coverage and dataset profile metadata,
+  and this is surfaced in the Admin Analytics UI.
 - **Pluggable transformers:** the emotion/prediction interfaces allow dropping in XLNet/RoBERTa later.
 
-Labels: `normal`, `stress`, `anxiety`, `depression`.
+Prediction labels: `normal`, `stress`, `anxiety`, `depression`.
 
 ---
 
@@ -168,6 +176,7 @@ Copy `.env.example` → `.env`. Key values:
 | `JWT_EXPIRATION_MS`, `JWT_REFRESH_EXPIRATION_MS` | Token lifetimes |
 | `SPRING_DATASOURCE_*` | Backend datasource (non‑Docker) |
 | `ML_SERVICE_BASE_URL` | Backend → ML service URL |
+| `ML_SYNTHETIC_TRAINING_SAMPLES` | Training subset size from synthetic corpus (default `58320`) |
 | `VITE_API_BASE_URL` | Frontend → backend API base |
 
 ---
@@ -189,6 +198,22 @@ Base path: `/api/v1`
 
 ML service (internal): `POST /analyze/journal` · `POST /analyze/social` · `POST /predict/mood` ·
 `POST /detect/triggers` · `POST /insights/weekly` · `GET /models/metrics` · `GET /health`
+
+`GET /models/metrics` includes label sets plus dataset profile (source size, training samples used).
+
+`GET /health` returns service status and runtime dataset summary:
+
+```json
+{
+  "status": "ok",
+  "dataset": {
+    "mode": "full",
+    "training_samples": 58320,
+    "source_samples": 58320,
+    "emotion_label_count": 28
+  }
+}
+```
 
 ---
 

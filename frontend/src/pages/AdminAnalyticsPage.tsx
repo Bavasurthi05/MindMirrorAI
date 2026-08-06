@@ -37,6 +37,11 @@ export function AdminAnalyticsPage() {
             <p className="text-sm text-slate-500 dark:text-slate-400">
               Backend: <span className="font-medium">{metrics.backend}</span> · Train {metrics.trainSize} / Test {metrics.testSize}
             </p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Dataset: <span className="font-medium">{metrics.datasetProfile?.name ?? 'Seed dataset'}</span>
+              {metrics.datasetProfile?.sourceDatasetSize ? ` · Source size ${metrics.datasetProfile.sourceDatasetSize.toLocaleString()}` : ''}
+              {metrics.emotionLabels?.length ? ` · Emotion labels ${metrics.emotionLabels.length}` : ''}
+            </p>
             <div className="mt-4 space-y-3">
               {Object.entries(metrics.models).map(([key, model]) => (
                 <div key={key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">

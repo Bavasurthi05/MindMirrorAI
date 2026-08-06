@@ -71,8 +71,15 @@ export interface ModelMetrics {
   available: boolean;
   backend: string;
   labels: string[];
+  emotionLabels?: string[];
   trainSize: number;
   testSize: number;
+  datasetProfile?: {
+    name?: string;
+    source?: string;
+    sourceDatasetSize?: number;
+    trainingSamplesUsed?: number;
+  };
   models: Record<string, ModelInfo>;
 }
 

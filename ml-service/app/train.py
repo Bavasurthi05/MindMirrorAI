@@ -25,7 +25,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
 from .preprocessing import preprocess
-from .seed_data import LABELS, SAMPLES
+from .seed_data import DATASET_PROFILE, EMOTION_LABELS, LABELS, SAMPLES
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 PIPELINE_PATH = MODELS_DIR / "pipeline.joblib"
@@ -38,6 +38,27 @@ def _build_vectorizer() -> TfidfVectorizer:
         ngram_range=(1, 2),
         min_df=1,
         sublinear_tf=True,
+    )
+
+
+def _build_random_forest(sample_count: int) -> RandomForestClassifier:
+    """Use a faster, stable configuration for larger synthetic corpora."""
+    if sample_count >= 40000:
+        return RandomForestClassifier(
+            n_estimators=180,
+            max_depth=50,
+            min_samples_leaf=2,
+            max_features="sqrt",
+            class_weight="balanced_subsample",
+            random_state=42,
+            n_jobs=-1,
+        )
+
+    return RandomForestClassifier(
+        n_estimators=300,
+        class_weight="balanced",
+        random_state=42,
+        n_jobs=-1,
     )
 
 
@@ -55,7 +76,7 @@ def train() -> dict:
 
     rf_pipeline = Pipeline([
         ("tfidf", _build_vectorizer()),
-        ("clf", RandomForestClassifier(n_estimators=300, random_state=42, class_weight="balanced")),
+        ("clf", _build_random_forest(len(texts))),
     ])
     baseline_pipeline = Pipeline([
         ("tfidf", _build_vectorizer()),
@@ -70,8 +91,10 @@ def train() -> dict:
 
     metrics = {
         "labels": LABELS,
+        "emotion_labels": EMOTION_LABELS,
         "train_size": len(x_train),
         "test_size": len(x_test),
+        "dataset_profile": DATASET_PROFILE,
         "models": {
             "random_forest": {
                 "name": "TF-IDF + Random Forest",
