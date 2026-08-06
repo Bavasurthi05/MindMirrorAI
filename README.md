@@ -27,7 +27,7 @@ AI‑driven insights — mood predictions, **explainable** mental‑health signa
 
 ## Architecture
 
-A polyglot monorepo with four services:
+A polyglot monorepo with three application services plus MySQL:
 
 ```mermaid
 graph LR
@@ -104,18 +104,21 @@ MindMirrorAI/
 ├── docker-compose.yml
 ├── .env.example
 ├── backend/            # Spring Boot (Java 21) — hexagonal architecture
-│   └── src/main/java/com/project/mentalhealth/
-│       ├── domain/{model,repository}
-│       ├── application/{ports/in,ports/out,service}
-│       ├── infrastructure/{persistence,security,ml,email}
-│       └── interfaces/api/v1/{auth,journal,questionnaire,mood,trigger,
-│           recovery,report,analysis,analytics,goal,feedback,profile,admin}
-│   └── src/main/resources/db/migration/  # Flyway V1–V7
-├── ml-service/         # FastAPI ML service
-│   └── app/{main,analysis,preprocessing,ml_models,train,seed_data,schemas}.py
+│   ├── src/main/java/com/project/mentalhealth/
+│   │   ├── domain/{model,repository}
+│   │   ├── application/{ports/in,ports/out,service}
+│   │   ├── infrastructure/{persistence,security,ml,email}
+│   │   ├── interfaces/api/v1/{auth,journal,questionnaire,mood,trigger,
+│   │   │   recovery,report,analysis,analytics,goal,feedback,profile,admin}
+│   │   └── shared/
+│   └── src/main/resources/{application.yml,application-dev.yml,application-prod.yml}
 ├── frontend/           # React + TS + Vite + Tailwind
 │   └── src/{pages,components,context,lib,routes}
-└── database/schema/init.sql
+├── ml-service/         # FastAPI ML service
+│   └── app/{main,analysis,preprocessing,ml_models,train,seed_data,schemas}.py
+├── database/schema/init.sql
+├── docs/               # project documentation and analysis notes
+└── .github/workflows/ci.yml
 ```
 
 ---
@@ -130,7 +133,8 @@ MindMirrorAI/
 cp .env.example .env   # set JWT_SECRET and passwords
 docker compose up --build
 ```
-- Frontend → http://localhost:5173  · Backend → http://localhost:8080  · ML → http://localhost:8000
+- Frontend (Docker/Nginx) → http://localhost:5173  · Backend → http://localhost:8080  · ML → http://localhost:8000
+- For local frontend development, Vite serves the app on http://localhost:3000.
 
 ### Option B — Run services individually
 
