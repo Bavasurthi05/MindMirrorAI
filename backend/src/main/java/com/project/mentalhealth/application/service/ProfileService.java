@@ -1,6 +1,7 @@
 package com.project.mentalhealth.application.service;
 
 import com.project.mentalhealth.application.ports.in.ProfileUseCase;
+import com.project.mentalhealth.application.ports.out.PasswordEncoderPort;
 import com.project.mentalhealth.domain.model.JournalEntry;
 import com.project.mentalhealth.domain.model.User;
 import com.project.mentalhealth.domain.model.WellnessGoal;
@@ -8,7 +9,9 @@ import com.project.mentalhealth.domain.repository.JournalEntryRepository;
 import com.project.mentalhealth.domain.repository.MoodEntryRepository;
 import com.project.mentalhealth.domain.repository.UserRepository;
 import com.project.mentalhealth.domain.repository.WellnessGoalRepository;
+import com.project.mentalhealth.interfaces.api.v1.profile.dto.ChangePasswordRequest;
 import com.project.mentalhealth.interfaces.api.v1.profile.dto.ProfileResponse;
+import com.project.mentalhealth.interfaces.api.v1.profile.dto.UpdateProfileRequest;
 import com.project.mentalhealth.shared.exception.ApiException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -26,22 +29,54 @@ public class ProfileService implements ProfileUseCase {
     private final JournalEntryRepository journalRepository;
     private final MoodEntryRepository moodRepository;
     private final WellnessGoalRepository goalRepository;
+    private final PasswordEncoderPort passwordEncoder;
 
     public ProfileService(UserRepository userRepository,
                           JournalEntryRepository journalRepository,
                           MoodEntryRepository moodRepository,
-                          WellnessGoalRepository goalRepository) {
+                          WellnessGoalRepository goalRepository,
+                          PasswordEncoderPort passwordEncoder) {
         this.userRepository = userRepository;
         this.journalRepository = journalRepository;
         this.moodRepository = moodRepository;
         this.goalRepository = goalRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Override
     @Transactional(readOnly = true)
     public ProfileResponse profile(String userEmail) {
-        User user = userRepository.findByEmail(userEmail)
+        User user = findUser(userEmail);
+        return buildProfileResponse(user);
+    }
+
+    @Override
+    @Transactional
+    public ProfileResponse updateProfile(String userEmail, UpdateProfileRequest request) {
+        User user = findUser(userEmail);
+        user.setFirstName(request.getFirstName().trim());
+        user.setLastName(request.getLastName().trim());
+        userRepository.save(user);
+        return buildProfileResponse(user);
+    }
+
+    @Override
+    @Transactional
+    public void changePassword(String userEmail, ChangePasswordRequest request) {
+        User user = findUser(userEmail);
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
+            throw new ApiException("Current password is incorrect", HttpStatus.BAD_REQUEST);
+        }
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+    }
+
+    private User findUser(String userEmail) {
+        return userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ApiException("User not found", HttpStatus.UNAUTHORIZED));
+    }
+
+    private ProfileResponse buildProfileResponse(User user) {
         Long userId = user.getId();
 
         List<JournalEntry> journals = journalRepository.findByUserIdOrderByCreatedAtDesc(userId);
@@ -51,6 +86,8 @@ public class ProfileService implements ProfileUseCase {
         long goalsCompleted = goals.stream().filter(WellnessGoal::isCompleted).count();
 
         return ProfileResponse.builder()
+                .firstName(user.getFirstName())
+                .lastName(user.getLastName())
                 .fullName(user.getFirstName() + " " + user.getLastName())
                 .email(user.getEmail())
                 .role(user.getRole() == null ? "ROLE_USER" : user.getRole().getName())

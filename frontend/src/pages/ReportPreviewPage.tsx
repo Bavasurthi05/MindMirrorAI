@@ -36,9 +36,9 @@ export function ReportPreviewPage() {
   };
 
   const summaryCards = [
-    { label: 'Overall Wellness', value: report ? `${report.overallWellness}/100` : '—' },
-    { label: 'Stress Trend', value: report?.stressTrend ?? '—' },
-    { label: 'Recovery Score', value: report ? `${report.recoveryScore}%` : '—' },
+    { label: 'Overall Wellness', value: report ? `${report.overallWellness}/100` : '—', detail: 'Current wellbeing snapshot' },
+    { label: 'Stress Trend', value: report?.stressTrend ?? '—', detail: 'Recent emotional pressure' },
+    { label: 'Recovery Score', value: report ? `${report.recoveryScore}%` : '—', detail: 'Supportive habit progress' },
   ];
   const predictionSummary = report?.predictionSummary ?? [];
   const triggerAnalysis = (report?.topTriggers ?? []).map((t) => ({ title: t.title, strength: t.strength }));
@@ -75,6 +75,7 @@ export function ReportPreviewPage() {
             <div key={card.label} className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-5">
               <p className="text-sm text-slate-500">{card.label}</p>
               <p className="mt-2 text-xl font-semibold text-slate-900">{card.value}</p>
+              <p className="mt-1 text-sm text-slate-600">{card.detail}</p>
             </div>
           ))}
         </div>
@@ -90,7 +91,7 @@ export function ReportPreviewPage() {
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Wellness Summary</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-900">What your current snapshot says</h2>
           <div className="mt-6 rounded-[1.4rem] border border-slate-200 bg-slate-50 p-5 text-sm leading-7 text-slate-600">
-            {report?.summaryText ?? 'Your report will appear here once you start logging journals, moods, and check-ins.'}
+            {report?.summaryText ?? 'Your report will appear here once you start logging journals, moods, and check-ins. The preview will update as more data becomes available.'}
           </div>
         </motion.section>
 
@@ -103,11 +104,13 @@ export function ReportPreviewPage() {
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Prediction Summary</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-900">Short-term outlook</h2>
           <ul className="mt-6 space-y-3 text-sm leading-7 text-slate-600">
-            {predictionSummary.map((item) => (
+            {predictionSummary.length > 0 ? predictionSummary.map((item) => (
               <li key={item} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 {item}
               </li>
-            ))}
+            )) : (
+              <li className="rounded-2xl border border-slate-200 bg-slate-50 p-4">No prediction summary is available yet. Logging more journal entries will make the outlook more specific.</li>
+            )}
           </ul>
         </motion.section>
       </div>
@@ -122,12 +125,14 @@ export function ReportPreviewPage() {
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Trigger Analysis</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-900">Most relevant pressure points</h2>
           <div className="mt-6 space-y-3">
-            {triggerAnalysis.map((item) => (
+            {triggerAnalysis.length > 0 ? triggerAnalysis.map((item) => (
               <div key={item.title} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <span className="text-sm font-medium text-slate-800">{item.title}</span>
                 <span className="text-sm font-semibold text-indigo-600">{item.strength}</span>
               </div>
-            ))}
+            )) : (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">No trigger patterns have been detected yet.</div>
+            )}
           </div>
         </motion.section>
 
@@ -199,11 +204,13 @@ export function ReportPreviewPage() {
         <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Recommendations</p>
         <h2 className="mt-2 text-2xl font-semibold text-slate-900">Suggested next steps</h2>
         <div className="mt-6 space-y-3">
-          {recommendations.map((item) => (
+          {recommendations.length > 0 ? recommendations.map((item) => (
             <div key={item} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-7 text-slate-600">
               {item}
             </div>
-          ))}
+          )) : (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Recommendations will appear here as you log more data.</div>
+          )}
         </div>
       </motion.section>
     </div>

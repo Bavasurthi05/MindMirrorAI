@@ -8,6 +8,8 @@ import java.time.Instant;
 @Getter
 @Builder
 public class ProfileResponse {
+    private final String firstName;
+    private final String lastName;
     private final String fullName;
     private final String email;
     private final String role;

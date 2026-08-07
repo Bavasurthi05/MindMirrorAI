@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '../components/ui/button';
 import { useTheme } from '../context/ThemeContext';
-
-const REMINDER_KEY = 'mindmirror.journalReminder';
+import { getReminderStatusMessage, getStoredReminderPreference, REMINDER_KEY } from '../lib/settings';
 
 export function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
@@ -11,7 +10,7 @@ export function SettingsPage() {
   const [permission, setPermission] = useState<NotificationPermission>('default');
 
   useEffect(() => {
-    setReminderOn(localStorage.getItem(REMINDER_KEY) === 'true');
+    setReminderOn(getStoredReminderPreference(localStorage));
     if ('Notification' in window) {
       setPermission(Notification.permission);
     }
@@ -64,11 +63,11 @@ export function SettingsPage() {
             <div>
               <p className="text-sm font-semibold text-slate-900 dark:text-white">Daily journal reminder</p>
               <p className="text-sm text-slate-600 dark:text-slate-400">
-                {'Notification' in window
-                  ? reminderOn
-                    ? 'Browser reminders are enabled.'
-                    : 'Get a gentle nudge to journal each day.'
-                  : 'Notifications are not supported in this browser.'}
+                {getReminderStatusMessage({
+                  isSupported: 'Notification' in window,
+                  reminderOn,
+                  permission,
+                })}
               </p>
               {permission === 'denied' ? (
                 <p className="mt-1 text-xs text-rose-600">Notifications are blocked in your browser settings.</p>

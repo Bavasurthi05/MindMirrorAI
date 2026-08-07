@@ -8,6 +8,12 @@ const helplines = [
   { region: 'Canada', name: 'Talk Suicide Canada', contact: '1-833-456-4566', note: '24/7 support across Canada.' },
 ];
 
+const supportSteps = [
+  'Move to a safe, public place if you can and let someone you trust know what is happening.',
+  'If this is an immediate danger, call emergency services or go to the nearest emergency department.',
+  'Use the contacts below to reach trained crisis support and keep a trusted person nearby.',
+];
+
 export function EmergencyHelpPage() {
   return (
     <div className="space-y-6">
@@ -24,6 +30,14 @@ export function EmergencyHelpPage() {
           services right away. The resources below are provided for informational purposes only and are not a
           substitute for professional care or crisis diagnosis.
         </p>
+        <ul className="mt-4 space-y-2 text-sm text-slate-700 dark:text-slate-300">
+          {supportSteps.map((step) => (
+            <li key={step} className="flex gap-2">
+              <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-rose-500" />
+              <span>{step}</span>
+            </li>
+          ))}
+        </ul>
       </motion.section>
 
       <section className="grid gap-4 md:grid-cols-2">

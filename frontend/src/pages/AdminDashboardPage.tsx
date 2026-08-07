@@ -10,8 +10,8 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import { Line, Bar, Doughnut } from 'react-chartjs-2';
-import { useAdminOverview } from '../lib/admin';
+import { Line, Doughnut } from 'react-chartjs-2';
+import { useAdminFeedback, useAdminModelMetrics, useAdminOverview, useAdminUsers, useSetUserEnabled } from '../lib/admin';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend);
 
@@ -36,18 +36,6 @@ const growthData = {
   ],
 };
 
-const weeklyReportsData = {
-  labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-  datasets: [
-    {
-      label: 'Weekly reports',
-      data: [24, 31, 27, 35, 29, 41, 33],
-      backgroundColor: ['#818cf8', '#60a5fa', '#22d3ee', '#34d399', '#f59e0b', '#fb7185', '#a78bfa'],
-      borderRadius: 10,
-    },
-  ],
-};
-
 const triggerDistribution = {
   labels: ['Workload', 'Sleep', 'Social', 'Lifestyle'],
   datasets: [
@@ -59,14 +47,12 @@ const triggerDistribution = {
   ],
 };
 
-const weeklyReports = [
-  { title: 'Weekly wellness report', count: '142 generated' },
-  { title: 'Stress trend summary', count: '89 generated' },
-  { title: 'Recovery recommendations', count: '66 generated' },
-];
-
 export function AdminDashboardPage() {
   const { data: overview } = useAdminOverview();
+  const { data: users = [] } = useAdminUsers();
+  const { data: feedback = [] } = useAdminFeedback();
+  const { data: modelMetrics } = useAdminModelMetrics();
+  const setUserEnabled = useSetUserEnabled();
 
   const analyticsCards = overview
     ? [
@@ -76,6 +62,10 @@ export function AdminDashboardPage() {
         { label: 'Assessments', value: `${overview.totalAssessments}`, detail: 'Completed questionnaires' },
       ]
     : analyticsCardsFallback;
+
+  const modelRows = modelMetrics?.models
+    ? Object.entries(modelMetrics.models).map(([key, value]) => ({ key, ...value }))
+    : [];
 
   return (
     <div className="space-y-6">
@@ -151,10 +141,29 @@ export function AdminDashboardPage() {
           transition={{ duration: 0.25, delay: 0.1 }}
           className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm"
         >
-          <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Trigger Analytics</p>
-          <h2 className="mt-2 text-2xl font-semibold text-slate-900">Most common trigger categories</h2>
-          <div className="mt-6">
-            <Bar data={weeklyReportsData} options={{ plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }} />
+          <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">User management</p>
+          <h2 className="mt-2 text-2xl font-semibold text-slate-900">Accounts and access</h2>
+          <div className="mt-6 space-y-3">
+            {users.map((user) => (
+              <div key={user.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-slate-900">{user.fullName}</p>
+                    <p className="text-sm text-slate-600">{user.email}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700">{user.role}</span>
+                    <button
+                      type="button"
+                      onClick={() => setUserEnabled.mutate({ id: user.id, enabled: !user.enabled })}
+                      className={`rounded-full px-3 py-1 text-sm font-semibold ${user.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}
+                    >
+                      {user.enabled ? 'Enabled' : 'Disabled'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </motion.section>
 
@@ -164,20 +173,45 @@ export function AdminDashboardPage() {
           transition={{ duration: 0.25, delay: 0.12 }}
           className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm"
         >
-          <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Weekly Reports</p>
-          <h2 className="mt-2 text-2xl font-semibold text-slate-900">Recent report outputs</h2>
+          <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Model accuracy</p>
+          <h2 className="mt-2 text-2xl font-semibold text-slate-900">Random Forest vs baseline</h2>
           <div className="mt-6 space-y-3">
-            {weeklyReports.map((item) => (
-              <div key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="font-semibold text-slate-900">{item.title}</p>
-                  <span className="text-sm text-slate-500">{item.count}</span>
+            {modelRows.map((row) => (
+              <div key={row.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold text-slate-900">{row.name}</p>
+                  <span className="text-sm text-slate-600">{row.accuracy.toFixed(2)} accuracy</span>
                 </div>
+                <p className="mt-1 text-sm text-slate-600">F1 macro: {row.f1Macro.toFixed(2)}</p>
               </div>
             ))}
           </div>
         </motion.section>
       </div>
+
+      <motion.section
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, delay: 0.14 }}
+        className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm"
+      >
+        <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Feedback review</p>
+        <h2 className="mt-2 text-2xl font-semibold text-slate-900">Recent user submissions</h2>
+        <div className="mt-6 space-y-3">
+          {feedback.map((item) => (
+            <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-slate-900">{item.userName}</p>
+                  <p className="text-sm text-slate-600">{item.userEmail}</p>
+                </div>
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-700">{item.rating}/5</span>
+              </div>
+              <p className="mt-3 text-sm leading-7 text-slate-700">{item.message}</p>
+            </div>
+          ))}
+        </div>
+      </motion.section>
     </div>
   );
 }

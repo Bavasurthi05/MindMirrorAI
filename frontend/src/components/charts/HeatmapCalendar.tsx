@@ -16,6 +16,10 @@ export function heatmapColor(score: number | null): string {
  * Days without data render as neutral slate.
  */
 export function HeatmapCalendar({ cells }: HeatmapCalendarProps) {
+  if (cells.length === 0) {
+    return <p className="text-sm text-slate-500">No wellness history yet.</p>;
+  }
+
   return (
     <div>
       <div className="grid grid-flow-col grid-rows-7 gap-1.5" style={{ gridAutoColumns: 'minmax(0, 1fr)' }}>
@@ -23,18 +27,18 @@ export function HeatmapCalendar({ cells }: HeatmapCalendarProps) {
           <div
             key={cell.date}
             title={cell.score === null ? `${cell.date}: no check-in` : `${cell.date}: ${cell.score}/100`}
-            className={`aspect-square rounded-[4px] ${heatmapColor(cell.score)}`}
+            className={`aspect-square rounded-[4px] border border-white/40 ${heatmapColor(cell.score)}`}
           />
         ))}
       </div>
-      <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
-        <span>Low</span>
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <span className="font-medium text-slate-600">Wellness</span>
         <span className="h-3 w-3 rounded-[3px] bg-rose-500" />
         <span className="h-3 w-3 rounded-[3px] bg-orange-400" />
         <span className="h-3 w-3 rounded-[3px] bg-amber-400" />
         <span className="h-3 w-3 rounded-[3px] bg-emerald-400" />
         <span className="h-3 w-3 rounded-[3px] bg-emerald-500" />
-        <span>High</span>
+        <span>Higher</span>
       </div>
     </div>
   );

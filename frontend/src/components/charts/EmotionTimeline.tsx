@@ -31,12 +31,13 @@ export function EmotionTimeline({ points }: EmotionTimelineProps) {
   return (
     <div className="flex items-end gap-4 overflow-x-auto pb-2">
       {points.map((point) => (
-        <div key={`${point.date}-${point.score}`} className="flex min-w-[64px] flex-col items-center">
+        <div key={`${point.date}-${point.score}`} className="flex min-w-[72px] flex-col items-center rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
           <span className="text-3xl" title={point.label}>
             {emojiFor(point.label)}
           </span>
-          <span className="mt-1 text-xs font-medium capitalize text-slate-700">{point.label}</span>
-          <span className="text-[11px] text-slate-400">{point.date.slice(5)}</span>
+          <span className="mt-1 text-xs font-semibold capitalize text-slate-700">{point.label}</span>
+          <span className="mt-1 text-[11px] text-slate-400">{point.date.slice(5)}</span>
+          <span className="mt-1 text-[11px] font-medium text-cyan-600">{point.score}/100</span>
         </div>
       ))}
     </div>

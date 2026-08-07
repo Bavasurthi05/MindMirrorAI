@@ -1,23 +1,59 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '../components/ui/button';
-import { useProfile } from '../lib/profile';
+import { useChangePassword, useProfile, useUpdateProfile } from '../lib/profile';
 import { useGoals, useCreateGoal, useIncrementGoal, useDeleteGoal } from '../lib/goals';
 
 export function ProfilePage() {
   const { data: profile, isLoading } = useProfile();
   const { data: goals } = useGoals();
+  const updateProfile = useUpdateProfile();
+  const changePassword = useChangePassword();
   const createGoal = useCreateGoal();
   const incrementGoal = useIncrementGoal();
   const deleteGoal = useDeleteGoal();
   const [newGoal, setNewGoal] = useState('');
   const [target, setTarget] = useState(5);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (profile) {
+      setFirstName(profile.firstName ?? '');
+      setLastName(profile.lastName ?? '');
+    }
+  }, [profile]);
 
   const handleAddGoal = async () => {
     if (!newGoal.trim()) return;
     await createGoal.mutateAsync({ title: newGoal.trim(), target });
     setNewGoal('');
     setTarget(5);
+  };
+
+  const handleSaveProfile = async () => {
+    setStatusMessage(null);
+    try {
+      await updateProfile.mutateAsync({ firstName: firstName.trim(), lastName: lastName.trim() });
+      setStatusMessage('Profile updated successfully.');
+    } catch {
+      setStatusMessage('Unable to update profile right now.');
+    }
+  };
+
+  const handlePasswordChange = async () => {
+    setStatusMessage(null);
+    try {
+      await changePassword.mutateAsync({ currentPassword, newPassword });
+      setCurrentPassword('');
+      setNewPassword('');
+      setStatusMessage('Password updated successfully.');
+    } catch {
+      setStatusMessage('Current password is incorrect or the request failed.');
+    }
   };
 
   const stats = [
@@ -56,6 +92,31 @@ export function ProfilePage() {
               <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-white">{stat.value}</p>
             </div>
           ))}
+        </div>
+
+        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">Edit profile</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <input value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="First name" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
+              <input value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Last name" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
+            </div>
+            <div className="mt-3 flex items-center gap-3">
+              <Button onClick={handleSaveProfile} disabled={updateProfile.isPending}>Save</Button>
+              {statusMessage ? <span className="text-sm text-emerald-600">{statusMessage}</span> : null}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">Change password</p>
+            <div className="mt-3 space-y-3">
+              <input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} placeholder="Current password" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
+              <input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="New password" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
+            </div>
+            <div className="mt-3">
+              <Button variant="secondary" onClick={handlePasswordChange} disabled={changePassword.isPending}>Update password</Button>
+            </div>
+          </div>
         </div>
       </motion.section>
 
