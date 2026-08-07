@@ -72,7 +72,11 @@ graph LR
 | 8 | **Recovery Center** | Personalized recovery actions with completion tracking |
 | 9 | **Analytics Dashboard** | Radar, **heatmap calendar**, **emotion timeline**, mood/weekly trends, distributions |
 | 10 | **Reports** | Live report preview + **PDF export** (jsPDF/html2canvas) |
-| 11 | **Admin Panel** | Overview stats, **user management**, **model‑accuracy comparison**, **feedback review** |
+| 11 | **Social Accounts** | Connect accounts, import posts/content for analysis, and review the resulting insights |
+| 12 | **Admin Panel** | Overview stats, **user management**, **model‑accuracy comparison**, **feedback review** |
+
+**Recently shipped:** profile management and password updates, settings/emergency-help refinements,
+admin dashboard polish, and the first social-account import workflow.
 
 **Standout UX:** Dark/Light theme toggle · Mood streak counter · Weekly wellness goals ·
 Daily journal reminder (browser notifications) · Emergency Help resources · Feedback & Rating ·
@@ -117,7 +121,7 @@ MindMirrorAI/
 │   │   ├── application/{ports/in,ports/out,service}
 │   │   ├── infrastructure/{persistence,security,ml,email}
 │   │   ├── interfaces/api/v1/{auth,journal,questionnaire,mood,trigger,
-│   │   │   recovery,report,analysis,analytics,goal,feedback,profile,admin}
+│   │   │   recovery,report,analysis,analytics,goal,feedback,profile,admin,social}
 │   │   └── shared/
 │   └── src/main/resources/{application.yml,application-dev.yml,application-prod.yml}
 ├── frontend/           # React + TS + Vite + Tailwind
@@ -193,7 +197,8 @@ Base path: `/api/v1`
 | Analysis | `POST /analysis/journal` · `POST /analysis/social` · `GET /analysis/mood-prediction` · `GET /analysis/model-metrics` |
 | Analytics | `GET /analytics/overview` · `GET /analytics/weekly-insights` |
 | Triggers / Recovery / Reports | `GET,POST /triggers` · `GET /recovery` · `GET /reports/summary` |
-| Goals / Feedback / Profile | `GET,POST /goals` · `POST /feedback` · `GET /me/profile` |
+| Goals / Feedback / Profile | `GET,POST /goals` · `POST /feedback` · `GET /me/profile` · `PATCH /me/profile` · `POST /me/change-password` |
+| Social Accounts | `GET /social-accounts` · `POST /social-accounts/connect` · `DELETE /social-accounts/{id}` · `POST /social-accounts/import` |
 | Admin | `GET /admin/overview` · `GET /admin/users` · `PATCH /admin/users/{id}/enabled` · `GET /admin/feedback` · `GET /admin/model-metrics` |
 
 ML service (internal): `POST /analyze/journal` · `POST /analyze/social` · `POST /predict/mood` ·
