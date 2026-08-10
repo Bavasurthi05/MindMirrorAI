@@ -55,7 +55,8 @@ class SocialAccountServiceTest {
                 "instagram",
                 "abc123",
                 "Ada's account",
-                "https://example.com/avatar.png"
+                "https://example.com/avatar.png",
+                "profile media"
         ));
 
         assertThat(response.getProvider()).isEqualTo("instagram");
