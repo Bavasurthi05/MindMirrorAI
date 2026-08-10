@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useProfile } from '../lib/profile';
 import { useGoals } from '../lib/goals';
+import { useAuth } from '../context/AuthContext';
 
 const quickActions = [
   { title: 'New journal entry', to: '/journal', icon: '📝' },
@@ -38,8 +39,11 @@ const progressItems = [
 ];
 
 export function DashboardPage() {
+  const { user } = useAuth();
   const { data: profile } = useProfile();
   const { data: goals } = useGoals();
+  const displayName = (profile?.fullName ?? user?.fullName ?? '').trim();
+  const firstName = displayName.split(/\s+/)[0] || 'there';
 
   return (
     <div className="space-y-6">
@@ -81,7 +85,7 @@ export function DashboardPage() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-300">Welcome back</p>
-              <h1 className="mt-2 text-3xl font-semibold">Alicia, your wellness outlook looks steady.</h1>
+              <h1 className="mt-2 text-3xl font-semibold">{firstName}, your wellness outlook looks steady.</h1>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300">
                 Your latest reflections suggest a balanced rhythm with a few opportunities to nurture rest and clarity.
               </p>
