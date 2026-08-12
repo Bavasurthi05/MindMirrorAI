@@ -5,6 +5,7 @@ import com.project.mentalhealth.application.ports.out.MlAnalysisPort;
 import com.project.mentalhealth.domain.model.AssessmentSubmission;
 import com.project.mentalhealth.domain.model.MoodEntry;
 import com.project.mentalhealth.domain.model.RecoveryAction;
+import com.project.mentalhealth.domain.model.TriggerConfirmation;
 import com.project.mentalhealth.domain.model.TriggerEntry;
 import com.project.mentalhealth.domain.model.User;
 import com.project.mentalhealth.domain.repository.AssessmentSubmissionRepository;
@@ -24,9 +25,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -49,6 +52,7 @@ public class AnalyticsService implements AnalyticsUseCase {
     private final RecoveryActionRepository recoveryRepository;
     private final JournalEntryRepository journalRepository;
     private final MlAnalysisPort mlAnalysisPort;
+    private final MindsetScoringService mindsetScoringService;
 
     public AnalyticsService(UserRepository userRepository,
                             MoodEntryRepository moodRepository,
@@ -56,7 +60,8 @@ public class AnalyticsService implements AnalyticsUseCase {
                             AssessmentSubmissionRepository assessmentRepository,
                             RecoveryActionRepository recoveryRepository,
                             JournalEntryRepository journalRepository,
-                            MlAnalysisPort mlAnalysisPort) {
+                            MlAnalysisPort mlAnalysisPort,
+                            MindsetScoringService mindsetScoringService) {
         this.userRepository = userRepository;
         this.moodRepository = moodRepository;
         this.triggerRepository = triggerRepository;
@@ -64,6 +69,7 @@ public class AnalyticsService implements AnalyticsUseCase {
         this.recoveryRepository = recoveryRepository;
         this.journalRepository = journalRepository;
         this.mlAnalysisPort = mlAnalysisPort;
+        this.mindsetScoringService = mindsetScoringService;
     }
 
     @Override
@@ -74,7 +80,8 @@ public class AnalyticsService implements AnalyticsUseCase {
         Long userId = user.getId();
 
         List<MoodEntry> moods = moodRepository.findByUserIdOrderByRecordedAtDesc(userId);
-        List<TriggerEntry> triggers = triggerRepository.findByUserIdOrderByOccurredAtDesc(userId);
+        List<TriggerEntry> triggers = triggerRepository
+                .findByUserIdAndConfirmationNotOrderByOccurredAtDesc(userId, TriggerConfirmation.DISMISSED);
         List<AssessmentSubmission> assessments = assessmentRepository.findByUserIdOrderBySubmittedAtDesc(userId);
         List<RecoveryAction> recoveryActions = recoveryRepository.findByUserIdOrderByIdAsc(userId);
 
@@ -90,7 +97,8 @@ public class AnalyticsService implements AnalyticsUseCase {
         int recoveryScore = recoveryActions.isEmpty() ? 0
                 : (int) Math.round(100.0 * completedActions / recoveryActions.size());
 
-        int overallWellness = computeOverallWellness(assessments, averageMood);
+        Integer composite = mindsetScoringService.mindsetFor(user).getScore();
+        int overallWellness = composite != null ? composite : computeOverallWellness(assessments, averageMood);
 
         return AnalyticsOverviewResponse.builder()
                 .overallWellness(overallWellness)
@@ -112,14 +120,21 @@ public class AnalyticsService implements AnalyticsUseCase {
         Long userId = user.getId();
 
         List<MoodEntry> moods = moodRepository.findByUserIdOrderByRecordedAtDesc(userId);
-        List<Integer> scores = new ArrayList<>(moods.stream().map(MoodEntry::getMoodScore).toList());
+        List<Integer> scores = new ArrayList<>(moods.stream()
+                .filter(mood -> mood.getRecordedAt().isAfter(Instant.now().minus(7, ChronoUnit.DAYS)))
+                .map(MoodEntry::getMoodScore)
+                .toList());
         Collections.reverse(scores);
 
-        List<TriggerEntry> triggers = triggerRepository.findByUserIdOrderByOccurredAtDesc(userId);
+        // "Weekly" insights must look at the week, not all of history.
+        Instant weekAgo = Instant.now().minus(7, ChronoUnit.DAYS);
+        List<TriggerEntry> triggers = triggerRepository.findByUserIdOrderByOccurredAtDesc(userId).stream()
+                .filter(trigger -> trigger.getOccurredAt().isAfter(weekAgo))
+                .toList();
         double avgTriggerIntensity = triggers.stream().mapToInt(TriggerEntry::getIntensity).average().orElse(0);
-        int journalCount = (int) journalRepository
-                .findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(0, 1))
-                .getTotalElements();
+        int journalCount = (int) journalRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
+                .filter(entry -> entry.getCreatedAt() != null && entry.getCreatedAt().isAfter(weekAgo))
+                .count();
 
         return mlAnalysisPort.weeklyInsights(scores, journalCount, triggers.size(), avgTriggerIntensity);
     }

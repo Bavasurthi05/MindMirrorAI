@@ -15,6 +15,7 @@ Artifacts written to ml-service/models/:
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sklearn.ensemble import RandomForestClassifier
@@ -89,7 +90,13 @@ def train() -> dict:
     rf_pred = rf_pipeline.predict(x_test)
     base_pred = baseline_pipeline.predict(x_test)
 
+    trained_at = datetime.now(timezone.utc)
+    per_class = f1_score(y_test, rf_pred, average=None, labels=LABELS, zero_division=0)
+
     metrics = {
+        "version": f"random_forest-{trained_at.strftime('%Y%m%dT%H%M%SZ')}",
+        "per_class_f1": {label: round(float(score), 4) for label, score in zip(LABELS, per_class)},
+        "trained_at": trained_at.isoformat(),
         "labels": LABELS,
         "emotion_labels": EMOTION_LABELS,
         "train_size": len(x_train),
@@ -115,6 +122,28 @@ def train() -> dict:
     rf_pipeline.fit(texts, labels)
     joblib.dump(rf_pipeline, PIPELINE_PATH)
     METRICS_PATH.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+
+    # Also register this as a numbered version and activate it, so a fresh install starts
+    # with a populated registry rather than only the legacy artifact.
+    try:
+        from .training import registry
+
+        version = registry.next_version()
+        metrics["version"] = version
+        manifest = {
+            "total_examples": len(texts),
+            "seed_examples": len(texts),
+            "user_examples": 0,
+            "label_counts": {label: labels.count(label) for label in set(labels)},
+            "user_label_counts": {},
+        }
+        registry.write_artifacts(version, rf_pipeline, metrics, manifest)
+        registry.register(version, metrics, manifest,
+                          {"passed": True, "checks": [], "failed": [],
+                           "note": "baseline training from the synthetic seed corpus"})
+        registry.promote(version)
+    except Exception as exc:  # pragma: no cover - registry is additive, never fatal
+        print(f"Warning: could not register model version ({exc})")
 
     return metrics
 

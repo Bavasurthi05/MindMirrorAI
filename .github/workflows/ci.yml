@@ -52,7 +52,9 @@ jobs:
           python-version: '3.11'
       - run: pip install -r requirements.txt
       - name: Syntax check
-        run: python -m py_compile app/main.py app/analysis.py app/schemas.py
+        run: |
+          python -m py_compile app/main.py app/analysis.py app/schemas.py
+          python -m py_compile app/training/corpus.py app/training/quality.py app/training/registry.py app/training/runner.py
       - name: Run tests
         run: |
           pip install pytest httpx

@@ -13,6 +13,7 @@ public class JournalEntryResponse {
     private final String title;
     private final String content;
     private final String mood;
+    private final String promptId;
     private final Instant createdAt;
     private final Instant updatedAt;
 
@@ -22,6 +23,7 @@ public class JournalEntryResponse {
                 .title(entry.getTitle())
                 .content(entry.getContent())
                 .mood(entry.getMood())
+                .promptId(entry.getPromptId())
                 .createdAt(entry.getCreatedAt())
                 .updatedAt(entry.getUpdatedAt())
                 .build();

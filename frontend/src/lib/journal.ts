@@ -6,6 +6,7 @@ export interface JournalEntry {
   title: string;
   content: string;
   mood: string | null;
+  promptId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -24,6 +25,8 @@ export interface JournalEntryInput {
   title: string;
   content: string;
   mood?: string;
+  /** Which rotating prompt the user answered, if any. */
+  promptId?: string;
 }
 
 const JOURNAL_KEY = ['journal'] as const;

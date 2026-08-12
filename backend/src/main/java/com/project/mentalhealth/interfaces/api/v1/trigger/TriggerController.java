@@ -36,4 +36,22 @@ public class TriggerController {
     public ApiResponse<TriggerAnalyticsResponse> analytics(Authentication authentication) {
         return ApiResponse.success(triggerUseCase.analytics(authentication.getName()));
     }
+
+    @GetMapping("/pending")
+    public ApiResponse<List<TriggerEntryResponse>> pending(Authentication authentication) {
+        return ApiResponse.success(triggerUseCase.pendingConfirmation(authentication.getName()));
+    }
+
+    @PatchMapping("/{id}/confirm")
+    public ApiResponse<TriggerEntryResponse> confirm(Authentication authentication,
+                                                     @PathVariable Long id,
+                                                     @RequestParam(required = false) Integer intensity) {
+        return ApiResponse.success(triggerUseCase.confirm(authentication.getName(), id, intensity),
+                "Trigger confirmed");
+    }
+
+    @PatchMapping("/{id}/dismiss")
+    public ApiResponse<TriggerEntryResponse> dismiss(Authentication authentication, @PathVariable Long id) {
+        return ApiResponse.success(triggerUseCase.dismiss(authentication.getName(), id), "Trigger dismissed");
+    }
 }

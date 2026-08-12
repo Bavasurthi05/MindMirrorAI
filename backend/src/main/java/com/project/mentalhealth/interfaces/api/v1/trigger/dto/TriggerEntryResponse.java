@@ -14,6 +14,9 @@ public class TriggerEntryResponse {
     private final int intensity;
     private final String note;
     private final Instant occurredAt;
+    private final String source;
+    private final String confirmation;
+    private final Long analysisResultId;
 
     public static TriggerEntryResponse from(TriggerEntry entry) {
         return TriggerEntryResponse.builder()
@@ -22,6 +25,9 @@ public class TriggerEntryResponse {
                 .intensity(entry.getIntensity())
                 .note(entry.getNote())
                 .occurredAt(entry.getOccurredAt())
+                .source(entry.getSource())
+                .confirmation(entry.getConfirmation().name())
+                .analysisResultId(entry.getAnalysisResultId())
                 .build();
     }
 }

@@ -20,23 +20,50 @@ METRICS_PATH = MODELS_DIR / "metrics.json"
 
 _lock = threading.Lock()
 _pipeline = None
+_loaded_path: Optional[Path] = None
 _load_attempted = False
 
 
+def _resolve_pipeline_path() -> Optional[Path]:
+    """Artifact the registry says is live, falling back to the pre-registry file."""
+    from .training import registry
+
+    return registry.active_pipeline_path()
+
+
 def _load_pipeline():
-    global _pipeline, _load_attempted
+    """Load (or reload) the active pipeline.
+
+    Reloads automatically when the registry's active version changes, so promoting or
+    rolling back a model takes effect without restarting the service.
+    """
+    global _pipeline, _loaded_path, _load_attempted
     with _lock:
-        if _load_attempted:
+        path = _resolve_pipeline_path()
+        if _load_attempted and path == _loaded_path:
             return _pipeline
+
         _load_attempted = True
+        _loaded_path = path
+        _pipeline = None
+        if path is None or not path.exists():
+            return None
         try:
             import joblib  # noqa: WPS433 (optional dependency)
 
-            if PIPELINE_PATH.exists():
-                _pipeline = joblib.load(PIPELINE_PATH)
+            _pipeline = joblib.load(path)
         except Exception:  # pragma: no cover - defensive: any load failure -> heuristic
             _pipeline = None
         return _pipeline
+
+
+def reload() -> bool:
+    """Force a reload; called after a promotion or rollback."""
+    global _load_attempted, _loaded_path
+    with _lock:
+        _load_attempted = False
+        _loaded_path = None
+    return _load_pipeline() is not None
 
 
 def is_available() -> bool:
@@ -44,12 +71,46 @@ def is_available() -> bool:
 
 
 def get_metrics() -> Optional[dict]:
+    from .training import registry
+
+    path = registry.active_metrics_path()
     try:
-        if METRICS_PATH.exists():
-            return json.loads(METRICS_PATH.read_text(encoding="utf-8"))
+        if path is not None and path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
     except Exception:  # pragma: no cover
         return None
     return None
+
+
+HEURISTIC_VERSION = "heuristic-v1"
+
+
+def get_model_version() -> str:
+    """Stable identifier for whatever produced a prediction.
+
+    Every stored analysis records this, so a later corpus/model change can be
+    traced back to the predictions it produced. Prefers the version written by
+    the trainer; falls back to the artifact's modification time.
+    """
+    if not is_available():
+        return HEURISTIC_VERSION
+
+    from .training import registry
+
+    active = registry.active_version()
+    if active:
+        return active
+
+    metrics = get_metrics() or {}
+    version = metrics.get("version")
+    if isinstance(version, str) and version:
+        return version
+
+    try:
+        stamp = int(PIPELINE_PATH.stat().st_mtime)
+        return f"random_forest-{stamp}"
+    except OSError:  # pragma: no cover - defensive
+        return "random_forest-unknown"
 
 
 def _feature_contributions(pipeline, text: str, predicted_index: int,

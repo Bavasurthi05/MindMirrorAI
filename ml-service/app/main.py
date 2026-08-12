@@ -1,6 +1,7 @@
 import logging
+import os
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException, status
 
 from . import ml_models
 from .analysis import (
@@ -11,7 +12,11 @@ from .analysis import (
     predict_mood,
 )
 from .seed_data import DATASET_PROFILE
+from .training import registry, runner
 from .schemas import (
+    BatchAnalysisRequest,
+    BatchAnalysisResponse,
+    BatchAnalysisResult,
     DetectedTrigger,
     FeatureReason,
     JournalAnalysisRequest,
@@ -24,12 +29,32 @@ from .schemas import (
     TokenContribution,
     TriggerDetectionRequest,
     TriggerDetectionResponse,
+    ModelVersionInfo,
+    ModelVersionsResponse,
+    PromoteRequest,
+    PromoteResponse,
+    TrainJobResponse,
+    TrainRunRequest,
     WeeklyInsightsRequest,
     WeeklyInsightsResponse,
 )
 
-app = FastAPI(title="Mental Health ML Service", version="0.3.0")
+app = FastAPI(title="Mental Health ML Service", version="0.4.0")
 logger = logging.getLogger(__name__)
+
+# Training and promotion are privileged: they change what every user's predictions come
+# from. The service is internal-only, but this stops any process that can reach it from
+# silently swapping the deployed model.
+TRAINING_TOKEN = os.getenv("ML_TRAINING_TOKEN", "").strip()
+
+
+def require_training_token(x_training_token: str | None = Header(default=None)) -> None:
+    if not TRAINING_TOKEN:
+        # Unset means local/dev: allow, but make the exposure obvious in the logs.
+        logger.warning("ML_TRAINING_TOKEN is not set — training endpoints are unauthenticated")
+        return
+    if x_training_token != TRAINING_TOKEN:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid training token")
 
 
 def _dataset_runtime_summary() -> dict:
@@ -60,8 +85,17 @@ def log_dataset_profile() -> None:
 def health_check():
     return {
         "status": "ok",
+        "model_version": ml_models.get_model_version(),
+        "model_available": ml_models.is_available(),
         "dataset": _dataset_runtime_summary(),
     }
+
+
+def _trigger_models(text: str) -> list[DetectedTrigger]:
+    return [
+        DetectedTrigger(category=category, matched_terms=terms, intensity=min(10, 3 + 2 * len(terms)))
+        for category, terms in detect_triggers(text)
+    ]
 
 
 def _build_analysis(text: str) -> JournalAnalysisResponse:
@@ -79,6 +113,8 @@ def _build_analysis(text: str) -> JournalAnalysisResponse:
         prediction_probabilities=state["probabilities"],
         reasons=[FeatureReason(**reason) for reason in state["reasons"]],
         model_backend=state["backend"],
+        triggers=_trigger_models(text),
+        model_version=ml_models.get_model_version(),
     )
 
 
@@ -92,6 +128,25 @@ def analyze_social(request: SocialAnalysisRequest) -> JournalAnalysisResponse:
     return _build_analysis(request.text)
 
 
+@app.post("/analyze/batch", response_model=BatchAnalysisResponse)
+def analyze_batch(request: BatchAnalysisRequest) -> BatchAnalysisResponse:
+    """Analyze up to 50 texts in one round trip.
+
+    A failure on one item never fails the batch: that item carries an `error`
+    and the rest still return results.
+    """
+    results: list[BatchAnalysisResult] = []
+    for item in request.items:
+        try:
+            results.append(
+                BatchAnalysisResult(reference=item.reference, analysis=_build_analysis(item.text))
+            )
+        except Exception as exc:  # pragma: no cover - defensive per-item isolation
+            logger.exception("Batch analysis failed for reference=%s", item.reference)
+            results.append(BatchAnalysisResult(reference=item.reference, error=str(exc)))
+    return BatchAnalysisResponse(results=results)
+
+
 @app.get("/models/metrics", response_model=ModelMetricsResponse)
 def model_metrics() -> ModelMetricsResponse:
     metrics = ml_models.get_metrics()
@@ -99,6 +154,7 @@ def model_metrics() -> ModelMetricsResponse:
         return ModelMetricsResponse(
             available=ml_models.is_available(),
             backend="random_forest" if ml_models.is_available() else "heuristic",
+            version=ml_models.get_model_version(),
         )
     models = {
         key: ModelInfo(**value) for key, value in metrics.get("models", {}).items()
@@ -106,6 +162,7 @@ def model_metrics() -> ModelMetricsResponse:
     return ModelMetricsResponse(
         available=ml_models.is_available(),
         backend="random_forest" if ml_models.is_available() else "heuristic",
+        version=ml_models.get_model_version(),
         labels=metrics.get("labels", []),
         emotion_labels=metrics.get("emotion_labels", []),
         train_size=metrics.get("train_size", 0),
@@ -128,12 +185,7 @@ def predict_mood_endpoint(request: MoodPredictionRequest) -> MoodPredictionRespo
 
 @app.post("/detect/triggers", response_model=TriggerDetectionResponse)
 def detect_triggers_endpoint(request: TriggerDetectionRequest) -> TriggerDetectionResponse:
-    detected = detect_triggers(request.text)
-    triggers = [
-        DetectedTrigger(category=category, matched_terms=terms, intensity=min(10, 3 + 2 * len(terms)))
-        for category, terms in detected
-    ]
-    return TriggerDetectionResponse(triggers=triggers)
+    return TriggerDetectionResponse(triggers=_trigger_models(request.text))
 
 
 @app.post("/insights/weekly", response_model=WeeklyInsightsResponse)
@@ -167,4 +219,106 @@ def weekly_insights(request: WeeklyInsightsRequest) -> WeeklyInsightsResponse:
         highlights=highlights,
         focus_area=focus_area,
         wellbeing_index=wellbeing_index,
+    )
+
+
+# --- Training and model registry -----------------------------------------------------
+
+
+def _job_response(job: dict) -> TrainJobResponse:
+    return TrainJobResponse(
+        job_id=job.get("job_id", ""),
+        status=job.get("status", "UNKNOWN"),
+        message=job.get("message"),
+        started_at=job.get("started_at"),
+        finished_at=job.get("finished_at"),
+        version=job.get("version"),
+        gate=job.get("gate"),
+        corpus=job.get("corpus"),
+        metrics=job.get("metrics"),
+    )
+
+
+@app.post("/train/run", response_model=TrainJobResponse,
+          dependencies=[Depends(require_training_token)])
+def train_run(request: TrainRunRequest) -> TrainJobResponse:
+    """Start a retraining run. Returns immediately with a job id to poll.
+
+    Producing a new version never deploys it — see /models/promote.
+    """
+    rows = [example.model_dump() for example in request.examples]
+    job_id = runner.start(rows, request.max_per_user)
+    return _job_response(runner.get_job(job_id) or {"job_id": job_id, "status": "RUNNING"})
+
+
+@app.get("/train/status/{job_id}", response_model=TrainJobResponse,
+         dependencies=[Depends(require_training_token)])
+def train_status(job_id: str) -> TrainJobResponse:
+    job = runner.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown job")
+    return _job_response(job)
+
+
+@app.get("/models/versions", response_model=ModelVersionsResponse)
+def model_versions() -> ModelVersionsResponse:
+    return ModelVersionsResponse(
+        active=registry.active_version(),
+        versions=[ModelVersionInfo(**entry) for entry in registry.list_versions()],
+    )
+
+
+@app.get("/models/active", response_model=ModelVersionInfo)
+def active_model() -> ModelVersionInfo:
+    entry = registry.active_entry()
+    if entry is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active version")
+    return ModelVersionInfo(**entry)
+
+
+@app.post("/models/promote", response_model=PromoteResponse,
+          dependencies=[Depends(require_training_token)])
+def promote_model(request: PromoteRequest) -> PromoteResponse:
+    """Deploy a version. Refuses one that failed the gate unless explicitly forced."""
+    entry = registry.get_version(request.version)
+    if entry is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown version")
+
+    gate_passed = bool(entry.get("gate", {}).get("passed"))
+    if not gate_passed and not request.force:
+        failed = ", ".join(entry.get("gate", {}).get("failed", []))
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Version {request.version} failed the quality gate ({failed}). "
+                   "Re-send with force=true to deploy it anyway.",
+        )
+
+    try:
+        registry.promote(request.version)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    reloaded = ml_models.reload()
+    if not gate_passed:
+        logger.warning("Version %s was force-promoted despite failing the gate", request.version)
+    return PromoteResponse(
+        active=request.version, reloaded=reloaded, gate_passed=gate_passed, forced=not gate_passed
+    )
+
+
+@app.post("/models/rollback", response_model=PromoteResponse,
+          dependencies=[Depends(require_training_token)])
+def rollback_model(request: PromoteRequest) -> PromoteResponse:
+    """Return to a previously trained version. Never gated — this is the escape hatch."""
+    try:
+        registry.rollback(request.version)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    entry = registry.get_version(request.version) or {}
+    return PromoteResponse(
+        active=request.version,
+        reloaded=ml_models.reload(),
+        gate_passed=bool(entry.get("gate", {}).get("passed")),
+        forced=False,
     )

@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Button } from '../components/ui/button';
 import { useAnalyzeJournal, useMoodPrediction } from '../lib/analysis';
 import { ApiError } from '../lib/api';
+import { PredictionFeedbackControl } from '../components/analysis/PredictionFeedbackControl';
 
 const trendColor: Record<string, string> = {
   improving: 'text-emerald-600',
@@ -107,7 +108,7 @@ export function PredictionResultsPage() {
                   {analysis.sentiment}
                 </span>
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold capitalize text-slate-700">
-                  {analysis.emotion}
+                  {analysis.dominantEmotion}
                 </span>
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">
                   score {analysis.sentimentScore}
@@ -123,7 +124,7 @@ export function PredictionResultsPage() {
                 </div>
                 <p className="mt-1 text-2xl font-semibold capitalize text-slate-900">{analysis.prediction}</p>
                 <p className="text-xs text-slate-500">
-                  Confidence: {(analysis.predictionConfidence * 100).toFixed(0)}%
+                  Confidence: {((analysis.predictionConfidence ?? 0) * 100).toFixed(0)}%
                 </p>
               </div>
 
@@ -166,6 +167,8 @@ export function PredictionResultsPage() {
                   </div>
                 </div>
               ) : null}
+
+              <PredictionFeedbackControl analysisId={analysis.id} predictedLabel={analysis.prediction} />
             </div>
           ) : null}
         </motion.section>

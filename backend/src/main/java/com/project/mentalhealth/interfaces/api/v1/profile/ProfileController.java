@@ -1,10 +1,13 @@
 package com.project.mentalhealth.interfaces.api.v1.profile;
 
 import com.project.mentalhealth.application.ports.in.ProfileUseCase;
+import com.project.mentalhealth.application.service.UserPreferencesService;
 import com.project.mentalhealth.interfaces.api.v1.common.ApiResponse;
 import com.project.mentalhealth.interfaces.api.v1.profile.dto.ChangePasswordRequest;
 import com.project.mentalhealth.interfaces.api.v1.profile.dto.ProfileResponse;
+import com.project.mentalhealth.interfaces.api.v1.profile.dto.UpdatePreferencesRequest;
 import com.project.mentalhealth.interfaces.api.v1.profile.dto.UpdateProfileRequest;
+import com.project.mentalhealth.interfaces.api.v1.profile.dto.UserPreferencesResponse;
 import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,9 +22,23 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProfileController {
 
     private final ProfileUseCase profileUseCase;
+    private final UserPreferencesService preferencesService;
 
-    public ProfileController(ProfileUseCase profileUseCase) {
+    public ProfileController(ProfileUseCase profileUseCase, UserPreferencesService preferencesService) {
         this.profileUseCase = profileUseCase;
+        this.preferencesService = preferencesService;
+    }
+
+    @GetMapping("/preferences")
+    public ApiResponse<UserPreferencesResponse> preferences(Authentication authentication) {
+        return ApiResponse.success(preferencesService.get(authentication.getName()));
+    }
+
+    @PatchMapping("/preferences")
+    public ApiResponse<UserPreferencesResponse> updatePreferences(Authentication authentication,
+                                                                  @Valid @RequestBody UpdatePreferencesRequest request) {
+        return ApiResponse.success(preferencesService.update(authentication.getName(), request),
+                "Preferences updated");
     }
 
     @GetMapping("/profile")

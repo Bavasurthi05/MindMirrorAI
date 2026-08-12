@@ -17,4 +17,8 @@ public class JournalEntryRequest {
 
     @Size(max = 50, message = "Mood must be at most 50 characters")
     private String mood;
+
+    /** Which writing prompt the user answered, if any. */
+    @Size(max = 64, message = "Prompt id must be at most 64 characters")
+    private String promptId;
 }

@@ -3,6 +3,9 @@ import { motion } from 'framer-motion';
 import { Button } from '../components/ui/button';
 import { useCreateJournalEntry, useJournalEntries } from '../lib/journal';
 import { ApiError } from '../lib/api';
+import { promptsForToday } from '../lib/prompts';
+import { useAnalysisForEntry } from '../lib/analysis';
+import { PredictionFeedbackControl } from '../components/analysis/PredictionFeedbackControl';
 
 const moodOptions = [
   { value: 'calm', label: 'Calm', emoji: '🌿' },
@@ -22,6 +25,11 @@ export function JournalPage() {
   const [mood, setMood] = useState('calm');
   const [title, setTitle] = useState('');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [promptId, setPromptId] = useState<string | null>(null);
+  // Set after a save so we can show the analysis as it completes in the background.
+  const [lastSavedId, setLastSavedId] = useState<number | null>(null);
+  const prompts = useMemo(() => promptsForToday(3), []);
+  const { data: analysis } = useAnalysisForEntry(lastSavedId);
 
   const { data: entriesPage, isLoading: isLoadingEntries } = useJournalEntries(0, 10);
   const createEntry = useCreateJournalEntry();
@@ -36,6 +44,14 @@ export function JournalPage() {
     setTitle('');
     setContent('');
     setMood('calm');
+    setPromptId(null);
+  };
+
+  const applyPrompt = (id: string, text: string) => {
+    setPromptId(id);
+    if (!title.trim()) {
+      setTitle(text);
+    }
   };
 
   const handleDraft = () => {
@@ -50,7 +66,13 @@ export function JournalPage() {
     }
 
     try {
-      await createEntry.mutateAsync({ title: title.trim(), content: content.trim(), mood });
+      const saved = await createEntry.mutateAsync({
+        title: title.trim(),
+        content: content.trim(),
+        mood,
+        promptId: promptId ?? undefined,
+      });
+      setLastSavedId(saved.id);
       resetForm();
       setFeedback({ type: 'success', text: 'Your journal entry has been saved.' });
     } catch (error) {
@@ -84,6 +106,27 @@ export function JournalPage() {
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-4">
+            <div>
+              <p className="text-sm font-medium text-slate-700">Need a starting point?</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {prompts.map((prompt) => (
+                  <button
+                    key={prompt.id}
+                    type="button"
+                    onClick={() => applyPrompt(prompt.id, prompt.text)}
+                    aria-pressed={promptId === prompt.id}
+                    className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                      promptId === prompt.id
+                        ? 'border-indigo-500 bg-indigo-50 font-medium text-indigo-700'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300'
+                    }`}
+                  >
+                    {prompt.text}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <label className="block text-sm font-medium text-slate-700">
               Entry title
               <input
@@ -154,6 +197,59 @@ export function JournalPage() {
               >
                 {feedback.text}
               </p>
+            ) : null}
+
+            {lastSavedId ? (
+              <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5">
+                {!analysis || analysis.status === 'PENDING' ? (
+                  <p className="text-sm text-indigo-700">
+                    <span className="inline-block animate-pulse">Analyzing your entry…</span>
+                  </p>
+                ) : analysis.status === 'FAILED' ? (
+                  <p className="text-sm text-slate-600">
+                    We could not analyze this entry just now — it will be retried automatically. Your
+                    entry is saved either way.
+                  </p>
+                ) : (
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-indigo-600 px-3 py-1 text-xs font-semibold capitalize text-white">
+                        {analysis.sentiment}
+                      </span>
+                      <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold capitalize text-slate-700">
+                        {analysis.dominantEmotion}
+                      </span>
+                      <span className="rounded-full bg-white px-3 py-1 text-xs text-slate-600">
+                        reads as <span className="font-semibold capitalize">{analysis.prediction}</span>
+                        {analysis.predictionConfidence !== null
+                          ? ` (${(analysis.predictionConfidence * 100).toFixed(0)}%)`
+                          : ''}
+                      </span>
+                    </div>
+
+                    {analysis.reasons.length > 0 ? (
+                      <div className="mt-3">
+                        <p className="text-xs font-medium text-slate-600">Top contributing factors</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {analysis.reasons.slice(0, 5).map((reason) => (
+                            <span
+                              key={reason.feature}
+                              className="rounded-full bg-white px-2.5 py-1 text-xs text-slate-700"
+                            >
+                              {reason.feature} · {reason.percentage}%
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <PredictionFeedbackControl
+                      analysisId={analysis.id}
+                      predictedLabel={analysis.prediction}
+                    />
+                  </div>
+                )}
+              </div>
             ) : null}
           </div>
 

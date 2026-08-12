@@ -1,10 +1,14 @@
 import { motion } from 'framer-motion';
 import { Button } from '../components/ui/button';
+import { ModelManagement } from '../components/admin/ModelManagement';
 import {
   useAdminUsers,
   useSetUserEnabled,
   useAdminFeedback,
   useAdminModelMetrics,
+  useAdminPredictionFeedback,
+  useFeedbackStats,
+  retrainingReadiness,
 } from '../lib/admin';
 
 export function AdminAnalyticsPage() {
@@ -12,6 +16,9 @@ export function AdminAnalyticsPage() {
   const setEnabled = useSetUserEnabled();
   const { data: feedback } = useAdminFeedback();
   const { data: metrics } = useAdminModelMetrics();
+  const { data: feedbackStats } = useFeedbackStats();
+  const { data: predictionFeedback } = useAdminPredictionFeedback(20);
+  const readiness = feedbackStats ? retrainingReadiness(feedbackStats) : null;
 
   return (
     <div className="space-y-6">
@@ -27,6 +34,102 @@ export function AdminAnalyticsPage() {
           Manage users, review model accuracy, and read user feedback.
         </p>
       </motion.section>
+
+      <ModelManagement />
+
+      <section className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600 dark:text-cyan-400">
+          Prediction feedback
+        </p>
+        <h2 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">Training-label collection</h2>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+          Corrections users make to their own predictions — the label source a future retraining run
+          would learn from.
+        </p>
+
+        {!feedbackStats ? (
+          <p className="mt-6 text-sm text-slate-500">Loading…</p>
+        ) : (
+          <>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                { label: 'Total responses', value: feedbackStats.total },
+                { label: 'Agreed', value: feedbackStats.agree },
+                { label: 'Corrected', value: feedbackStats.disagree },
+                {
+                  label: 'Agreement rate',
+                  value:
+                    feedbackStats.agreementRatePercent === null
+                      ? 'No data'
+                      : `${feedbackStats.agreementRatePercent}%`,
+                },
+              ].map((item) => (
+                <div key={item.label} className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-800">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">{item.label}</p>
+                  <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-white">{item.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                Retraining readiness:{' '}
+                <span className={readiness?.ready ? 'text-emerald-600' : 'text-amber-600'}>
+                  {readiness?.ready ? 'Ready' : 'Not yet'}
+                </span>
+              </p>
+              {readiness && !readiness.ready ? (
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Waiting on: {readiness.reasons.join(' · ')}
+                </p>
+              ) : null}
+              {Object.keys(feedbackStats.correctedLabelCounts).length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {Object.entries(feedbackStats.correctedLabelCounts).map(([label, count]) => (
+                    <span
+                      key={label}
+                      className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium capitalize text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    >
+                      {label}: {count}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            {predictionFeedback && predictionFeedback.length > 0 ? (
+              <div className="mt-6 overflow-x-auto">
+                <table className="w-full min-w-[520px] text-left text-sm">
+                  <thead className="text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="py-2">Predicted</th>
+                      <th className="py-2">User said</th>
+                      <th className="py-2">Comment</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {predictionFeedback.map((item) => (
+                      <tr key={item.id} className="border-t border-slate-100 dark:border-slate-800">
+                        <td className="py-2 capitalize text-slate-700 dark:text-slate-200">
+                          {item.predictedLabel ?? '—'}
+                        </td>
+                        <td className="py-2 capitalize text-slate-900 dark:text-white">
+                          {item.agreement === 'AGREE' ? 'Correct' : (item.correctedLabel ?? item.agreement)}
+                        </td>
+                        <td className="py-2 text-slate-500 dark:text-slate-400">{item.comment ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="mt-6 text-sm text-slate-500 dark:text-slate-400">
+                No prediction feedback yet.
+              </p>
+            )}
+          </>
+        )}
+      </section>
 
       {/* Model accuracy comparison */}
       <section className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">

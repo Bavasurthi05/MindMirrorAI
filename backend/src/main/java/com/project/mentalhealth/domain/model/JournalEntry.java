@@ -28,4 +28,8 @@ public class JournalEntry extends BaseEntity {
 
     @Column
     private String mood;
+
+    /** Which writing prompt produced this entry, if any. */
+    @Column(name = "prompt_id", length = 64)
+    private String promptId;
 }

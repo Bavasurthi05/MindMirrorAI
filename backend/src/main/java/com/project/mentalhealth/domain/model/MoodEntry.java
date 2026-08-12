@@ -33,4 +33,11 @@ public class MoodEntry extends BaseEntity {
 
     @Column(name = "recorded_at", nullable = false)
     private Instant recordedAt;
+
+    /**
+     * {@code SELF_REPORTED} when the user logged it, {@code DERIVED} when inferred from
+     * journal analysis. Self-reported entries take precedence for a given day.
+     */
+    @Column(nullable = false, length = 24)
+    private String source = EntrySource.SELF_REPORTED;
 }

@@ -33,4 +33,17 @@ public class TriggerEntry extends BaseEntity {
 
     @Column(name = "occurred_at", nullable = false)
     private Instant occurredAt;
+
+    /** {@code USER_LOGGED} when entered by hand, {@code DERIVED} when detected from text. */
+    @Column(nullable = false, length = 24)
+    private String source = EntrySource.USER_LOGGED;
+
+    /** Review state for detected triggers; user-logged ones need no review. */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private TriggerConfirmation confirmation = TriggerConfirmation.NOT_REQUIRED;
+
+    /** The analysis that surfaced this trigger, when it was detected rather than logged. */
+    @Column(name = "analysis_result_id")
+    private Long analysisResultId;
 }

@@ -1,8 +1,10 @@
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import { useAnalyticsOverview } from '../lib/analytics';
+import { EmptyState } from '../components/feedback/EmptyState';
+import { MindsetPanel } from '../components/mindset/MindsetPanel';
 
 const RADAR_LABELS = ['Stress', 'Confidence', 'Sleep', 'Motivation', 'Social', 'Happiness'];
-const DEFAULT_RADAR = [82, 68, 74, 79, 88, 71];
 
 function CircularProgress({ value, label }: { value: number; label: string }) {
   const radius = 42;
@@ -42,28 +44,32 @@ function CircularProgress({ value, label }: { value: number; label: string }) {
 }
 
 export function MirrorPage() {
-  const { data } = useAnalyticsOverview();
+  const { data, isLoading } = useAnalyticsOverview();
 
   const radarByLabel = new Map((data?.radar ?? []).map((m) => [m.label, m.value]));
-  const radarValues = RADAR_LABELS.map((label, index) =>
-    radarByLabel.has(label) ? (radarByLabel.get(label) as number) : DEFAULT_RADAR[index],
-  );
-  const overallWellness = data?.overallWellness ?? 82;
+  // No invented fallbacks: an account with no data must not see a plausible-looking profile.
+  const hasRadar = radarByLabel.size > 0;
+  const radarValues = RADAR_LABELS.map((label) => radarByLabel.get(label) ?? 0);
+  const overallWellness = data?.overallWellness ?? null;
 
-  const metrics = [
-    { label: 'Wellness Score', value: `${overallWellness}%`, tone: 'from-cyan-500 to-indigo-500' },
-    ...RADAR_LABELS.map((label, index) => ({
-      label,
-      value: `${radarValues[index]}%`,
-      tone: 'from-indigo-500 to-violet-500',
-    })),
-  ];
+  const metrics = hasRadar
+    ? [
+        ...(overallWellness === null
+          ? []
+          : [{ label: 'Wellness Score', value: `${overallWellness}%`, tone: 'from-cyan-500 to-indigo-500' }]),
+        ...RADAR_LABELS.map((label, index) => ({
+          label,
+          value: `${radarValues[index]}%`,
+          tone: 'from-indigo-500 to-violet-500',
+        })),
+      ]
+    : [];
 
-  const circularStats = [
-    { label: 'Happiness', value: Math.round(radarByLabel.get('Happiness') ?? DEFAULT_RADAR[5]) },
-    { label: 'Confidence', value: Math.round(radarByLabel.get('Confidence') ?? DEFAULT_RADAR[1]) },
-    { label: 'Motivation', value: Math.round(radarByLabel.get('Motivation') ?? DEFAULT_RADAR[3]) },
-  ];
+  const circularStats = hasRadar
+    ? (['Happiness', 'Confidence', 'Motivation'] as const)
+        .filter((label) => radarByLabel.has(label))
+        .map((label) => ({ label, value: Math.round(radarByLabel.get(label) as number) }))
+    : [];
 
   return (
     <div className="space-y-6">
@@ -83,11 +89,13 @@ export function MirrorPage() {
             </p>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-center backdrop-blur">
-            <p className="text-4xl font-semibold">{overallWellness}</p>
+            <p className="text-4xl font-semibold">{overallWellness ?? '—'}</p>
             <p className="text-sm text-slate-300">Overall wellness</p>
           </div>
         </div>
       </motion.section>
+
+      <MindsetPanel />
 
       <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <motion.section
@@ -103,6 +111,28 @@ export function MirrorPage() {
             </div>
           </div>
 
+          {!hasRadar ? (
+            <div className="mt-6">
+              <EmptyState
+                title={isLoading ? 'Loading your profile…' : 'Not enough data yet'}
+                description={
+                  isLoading
+                    ? undefined
+                    : 'Your emotional profile is built from your reflections, mood check-ins, triggers and assessments. Add a few entries and it will appear here.'
+                }
+                action={
+                  isLoading ? undefined : (
+                    <Link
+                      to="/journal"
+                      className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
+                    >
+                      Write a reflection
+                    </Link>
+                  )
+                }
+              />
+            </div>
+          ) : (
           <div className="mt-6 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
             <div className="mx-auto flex max-w-md items-center justify-center">
               <svg viewBox="0 0 240 240" className="h-[280px] w-[280px]">
@@ -142,6 +172,7 @@ export function MirrorPage() {
               </svg>
             </div>
           </div>
+          )}
         </motion.section>
 
         <motion.section
@@ -151,6 +182,11 @@ export function MirrorPage() {
           className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm"
         >
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Wellness Snapshot</p>
+          {metrics.length === 0 ? (
+            <p className="mt-6 text-sm text-slate-500">
+              Metrics appear once you have recorded some reflections or check-ins.
+            </p>
+          ) : null}
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
             {metrics.map((item) => (
               <motion.div
@@ -174,6 +210,9 @@ export function MirrorPage() {
         className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm"
       >
         <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Circular Progress Indicators</p>
+        {circularStats.length === 0 ? (
+          <p className="mt-6 text-sm text-slate-500">No indicators yet — these follow your recorded data.</p>
+        ) : null}
         <div className="mt-6 grid gap-6 md:grid-cols-3">
           {circularStats.map((item) => (
             <div key={item.label} className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5">
@@ -183,30 +222,6 @@ export function MirrorPage() {
         </div>
       </motion.section>
 
-      <motion.section
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25, delay: 0.16 }}
-        className="rounded-[2rem] border border-slate-200 bg-slate-50 p-8 shadow-sm"
-      >
-        <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Animated Cards</p>
-        <div className="mt-6 grid gap-4 lg:grid-cols-3">
-          {[
-            { title: 'Growth Pattern', body: 'Signals show gentle improvement in consistency and resilience.' },
-            { title: 'Reflection Focus', body: 'Your mood appears more grounded after intentional rest periods.' },
-            { title: 'Social Energy', body: 'Interaction seems balanced, with space for deeper connection.' },
-          ].map((card) => (
-            <motion.div
-              key={card.title}
-              whileHover={{ y: -4, scale: 1.01 }}
-              className="rounded-[1.4rem] border border-slate-200 bg-white p-5 shadow-sm"
-            >
-              <h3 className="text-lg font-semibold text-slate-900">{card.title}</h3>
-              <p className="mt-2 text-sm leading-7 text-slate-600">{card.body}</p>
-            </motion.div>
-          ))}
-        </div>
-      </motion.section>
     </div>
   );
 }

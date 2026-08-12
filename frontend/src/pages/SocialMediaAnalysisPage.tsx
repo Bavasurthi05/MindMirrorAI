@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Button } from '../components/ui/button';
 import { useAnalyzeSocial } from '../lib/analysis';
 import { ApiError } from '../lib/api';
+import { PredictionFeedbackControl } from '../components/analysis/PredictionFeedbackControl';
 
 export function SocialMediaAnalysisPage() {
   const analyzeSocial = useAnalyzeSocial();
@@ -73,7 +74,7 @@ export function SocialMediaAnalysisPage() {
                 {analysis.sentiment}
               </span>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold capitalize text-slate-700">
-                {analysis.emotion}
+                {analysis.dominantEmotion}
               </span>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">
                 score {analysis.sentimentScore}
@@ -88,7 +89,7 @@ export function SocialMediaAnalysisPage() {
                 </span>
               </div>
               <p className="mt-1 text-2xl font-semibold capitalize text-slate-900">{analysis.prediction}</p>
-              <p className="text-xs text-slate-500">Confidence: {(analysis.predictionConfidence * 100).toFixed(0)}%</p>
+              <p className="text-xs text-slate-500">Confidence: {((analysis.predictionConfidence ?? 0) * 100).toFixed(0)}%</p>
             </div>
 
             {analysis.reasons.length > 0 ? (
@@ -112,6 +113,8 @@ export function SocialMediaAnalysisPage() {
                 </div>
               </div>
             ) : null}
+
+            <PredictionFeedbackControl analysisId={analysis.id} predictedLabel={analysis.prediction} />
           </div>
         ) : null}
       </motion.section>

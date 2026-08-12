@@ -2,10 +2,9 @@ package com.project.mentalhealth.application.service;
 
 import com.project.mentalhealth.application.ports.in.SocialAccountUseCase;
 import com.project.mentalhealth.application.ports.out.MlAnalysisPort;
-import com.project.mentalhealth.domain.model.AssessmentSubmission;
+import com.project.mentalhealth.domain.model.AnalysisSourceType;
 import com.project.mentalhealth.domain.model.SocialAccount;
 import com.project.mentalhealth.domain.model.User;
-import com.project.mentalhealth.domain.repository.AssessmentSubmissionRepository;
 import com.project.mentalhealth.domain.repository.SocialAccountRepository;
 import com.project.mentalhealth.domain.repository.UserRepository;
 import com.project.mentalhealth.interfaces.api.v1.social.dto.ConnectSocialAccountRequest;
@@ -25,17 +24,14 @@ public class SocialAccountService implements SocialAccountUseCase {
 
     private final SocialAccountRepository socialAccountRepository;
     private final UserRepository userRepository;
-    private final AssessmentSubmissionRepository assessmentRepository;
-    private final MlAnalysisPort mlAnalysisPort;
+    private final AnalysisOrchestrator analysisOrchestrator;
 
     public SocialAccountService(SocialAccountRepository socialAccountRepository,
                                 UserRepository userRepository,
-                                AssessmentSubmissionRepository assessmentRepository,
-                                MlAnalysisPort mlAnalysisPort) {
+                                AnalysisOrchestrator analysisOrchestrator) {
         this.socialAccountRepository = socialAccountRepository;
         this.userRepository = userRepository;
-        this.assessmentRepository = assessmentRepository;
-        this.mlAnalysisPort = mlAnalysisPort;
+        this.analysisOrchestrator = analysisOrchestrator;
     }
 
     @Override
@@ -98,23 +94,24 @@ public class SocialAccountService implements SocialAccountUseCase {
         socialAccountRepository.save(account);
     }
 
+    /**
+     * Analyze imported social content and store it as a first-class analysis.
+     *
+     * <p>Previously this was written as a fake questionnaire submission, which polluted the
+     * user's assessment history and skewed every wellness score derived from "the latest
+     * assessment". Migration V10 moved the old rows into {@code analysis_results}.
+     */
     @Transactional
     public MlAnalysisPort.JournalAnalysis importSocialContent(String userEmail, SocialContentImportRequest request) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ApiException("User not found", HttpStatus.UNAUTHORIZED));
 
-        MlAnalysisPort.JournalAnalysis analysis = mlAnalysisPort.analyzeSocial(request.getContent());
+        AnalysisOrchestrator.CompletedAnalysis completed = analysisOrchestrator.submitAndWait(
+                user, AnalysisSourceType.SOCIAL, null, request.getContent());
 
-        AssessmentSubmission submission = new AssessmentSubmission();
-        submission.setUser(user);
-        submission.setQuestionnaireKey("social-import:" + request.getProvider().toLowerCase());
-        submission.setTotalScore((int) Math.round(analysis.sentimentScore() * 100));
-        submission.setMaxScore(100);
-        submission.setSeverity(analysis.prediction());
-        submission.setAnswers(request.getContent());
-        submission.setSubmittedAt(Instant.now());
-        assessmentRepository.save(submission);
-
-        return analysis;
+        if (!completed.isOk()) {
+            throw new ApiException("ML service is unavailable", HttpStatus.SERVICE_UNAVAILABLE);
+        }
+        return completed.analysis();
     }
 }

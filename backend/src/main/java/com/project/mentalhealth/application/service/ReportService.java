@@ -32,19 +32,22 @@ public class ReportService implements ReportUseCase {
     private final TriggerEntryRepository triggerRepository;
     private final AssessmentSubmissionRepository assessmentRepository;
     private final RecoveryActionRepository recoveryRepository;
+    private final MindsetScoringService mindsetScoringService;
 
     public ReportService(UserRepository userRepository,
                          JournalEntryRepository journalRepository,
                          MoodEntryRepository moodRepository,
                          TriggerEntryRepository triggerRepository,
                          AssessmentSubmissionRepository assessmentRepository,
-                         RecoveryActionRepository recoveryRepository) {
+                         RecoveryActionRepository recoveryRepository,
+                         MindsetScoringService mindsetScoringService) {
         this.userRepository = userRepository;
         this.journalRepository = journalRepository;
         this.moodRepository = moodRepository;
         this.triggerRepository = triggerRepository;
         this.assessmentRepository = assessmentRepository;
         this.recoveryRepository = recoveryRepository;
+        this.mindsetScoringService = mindsetScoringService;
     }
 
     @Override
@@ -60,12 +63,9 @@ public class ReportService implements ReportUseCase {
         AssessmentSubmission latest = assessments.stream().findFirst().orElse(null);
         String latestSeverity = latest != null ? latest.getSeverity() : "Not assessed";
 
-        int overallWellness;
-        if (latest != null && latest.getMaxScore() > 0) {
-            overallWellness = (int) Math.round(100.0 * latest.getTotalScore() / latest.getMaxScore());
-        } else {
-            overallWellness = (int) Math.round(averageMood);
-        }
+        // Same composite the dashboard and mirror show, so a report never contradicts them.
+        Integer composite = mindsetScoringService.mindsetFor(user).getScore();
+        int overallWellness = composite != null ? composite : (int) Math.round(averageMood);
 
         List<TriggerEntry> triggers = triggerRepository.findByUserIdOrderByOccurredAtDesc(userId);
         double avgTriggerIntensity = triggers.stream().mapToInt(TriggerEntry::getIntensity).average().orElse(0);

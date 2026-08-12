@@ -42,7 +42,13 @@ graph LR
   and `interfaces/api/v1` (REST controllers + DTOs).
 - **Frontend** uses a feature/layout separation with React Query for server state, a JWT‑aware API
   client, and an auth + theme context.
-- **ML service** exposes analysis, prediction, trigger detection, weekly insights, and model metrics.
+- **ML service** exposes analysis, prediction, trigger detection, weekly insights, model metrics, and a
+  versioned training/registry API. It is **stateless and internal-only** — it owns *models*, the backend
+  owns *user data and orchestration*, and the ML service never touches MySQL.
+
+**Write path:** saving a journal entry inserts a `PENDING` analysis row and returns immediately; a
+background worker calls the ML service after the transaction commits and derives mood/trigger signals
+from the result. An ML outage therefore never fails a save — the row is retried later.
 
 ---
 
@@ -53,7 +59,7 @@ graph LR
 | **Frontend** | React 18, TypeScript, Vite, Tailwind CSS (dark mode), React Router, React Query, Chart.js + react‑chartjs‑2, Framer Motion, jsPDF + html2canvas |
 | **Backend** | Spring Boot 3.3 (Java 21), Spring Web / Security / Data JPA / Validation, JJWT, Flyway, Lombok, Maven |
 | **ML Service** | FastAPI, Uvicorn, Pydantic, scikit‑learn (TF‑IDF + Random Forest), joblib; optional SHAP, Transformers/Torch (pluggable) |
-| **Database** | MySQL 8.0 (Flyway migrations `V1`–`V7`) |
+| **Database** | MySQL 8.0 (Flyway migrations `V1`–`V14`) |
 | **Ops** | Docker Compose, GitHub Actions CI |
 
 ---
@@ -63,7 +69,7 @@ graph LR
 | # | Module | Highlights |
 |---|--------|-----------|
 | 1 | **Authentication** | Register, login, JWT access/refresh, email verification, forgot/reset password |
-| 2 | **Dashboard** | Welcome, wellness score, journal streak, goals, quick actions |
+| 2 | **Dashboard** | Wellness score, streak, goals, mood week, recent AI insights — all derived from the signed-in user's own data, with empty states when data is missing |
 | 3 | **Assessment** | Three methods — **Questionnaire**, **Journal**, **Social Media** text analysis |
 | 4 | **AI Prediction** | Mental‑health state prediction + confidence (TF‑IDF + Random Forest) |
 | 5 | **Explainable AI** | Per‑feature contribution breakdown ("why this prediction") |
@@ -73,10 +79,28 @@ graph LR
 | 9 | **Analytics Dashboard** | Radar, **heatmap calendar**, **emotion timeline**, mood/weekly trends, distributions |
 | 10 | **Reports** | Live report preview + **PDF export** (jsPDF/html2canvas) |
 | 11 | **Social Accounts** | Connect accounts, import posts/content for analysis, and review the resulting insights |
-| 12 | **Admin Panel** | Overview stats, **user management**, **model‑accuracy comparison**, **feedback review** |
+| 12 | **Admin Panel** | Overview stats, **user management**, **model‑accuracy comparison**, **feedback review**, **retraining & model deployment** (versions, quality gate, promote/rollback) |
+| 13 | **Personalized Mindset** | Composite explainable score calibrated against each user's own baseline, reported as deviation ("1.4σ below your usual range") |
 
-**Recently shipped:** profile management and password updates, settings/emergency-help refinements,
-admin dashboard polish, and the first social-account import workflow.
+**Recently shipped**
+
+- **Persisted ML analysis** — every journal entry is analyzed in the background and stored, with mood
+  and trigger signals derived from it, so ordinary journaling populates the whole app.
+- **A data-driven dashboard** — every figure traces to something the user did, with honest empty states
+  where data is missing instead of plausible-looking placeholders.
+- **A hardened ML client** — timeouts, one retry, and a circuit breaker, so ML downtime degrades the
+  product instead of breaking it.
+- **Deliberate data collection** — daily check-in, onboarding, writing prompts, trigger confirmation,
+  and timezone-aware day buckets.
+- **Prediction feedback** — "was this right?" captures the corrections a retraining run learns from.
+- **A full retraining loop** — consent-gated export → versioned training → quality gate → human
+  promotion → hot-swap → rollback, every step audited.
+- **A personalized mindset score** — one composite, explainable number that the dashboard, mirror and
+  reports all agree on, calibrated against each user's own baseline.
+
+**Data collection & consent:** daily buckets (streaks, heatmaps, "one check-in per day") use each
+user's own timezone. Using entries as **training data** is a separate, explicit, default-off opt-in,
+revocable in Settings; declining it changes nothing about how the app works.
 
 **Standout UX:** Dark/Light theme toggle · Mood streak counter · Weekly wellness goals ·
 Daily journal reminder (browser notifications) · Emergency Help resources · Feedback & Rating ·
@@ -103,7 +127,21 @@ with a **Logistic Regression baseline** for an accuracy comparison (surfaced in 
   transparent lexicon/heuristic baseline so it always runs.
 - **Admin observability:** model metrics now include emotion-label coverage and dataset profile metadata,
   and this is surfaced in the Admin Analytics UI.
+- **Retraining from user data:** consented, PII-scrubbed corrections are merged with the seed corpus
+  (`app/training/corpus.py`), trained into a **versioned** artifact, and evaluated against a **frozen
+  seed holdout** so successive versions stay comparable.
+- **Quality gate:** a candidate is promotable only if it clears every check in `app/training/quality.py` —
+  no accuracy/F1 regression, no class below an F1 floor, enough user examples overall and per class, and
+  no large shift in predicted-class distribution. Failing versions need an explicit, audited override.
+- **Versioned registry:** `models/versions/<version>/` plus a `registry.json` active pointer. Promotion
+  hot-swaps the live model without a restart, and any earlier version can be rolled back to.
+- **Promotion is always a human decision** — training produces a candidate, never a deployment.
 - **Pluggable transformers:** the emotion/prediction interfaces allow dropping in XLNet/RoBERTa later.
+
+> **On "fine-tuning":** TF-IDF + Random Forest cannot be incrementally fine-tuned — sklearn tree
+> ensembles have no `partial_fit`. What runs here is **periodic retraining on an augmented corpus**
+> (synthetic seed + user labels), which achieves the same goal. True incremental learning would need an
+> `SGDClassifier` path, and transformer fine-tuning remains a later phase behind the same interface.
 
 Prediction labels: `normal`, `stress`, `anxiety`, `depression`.
 
@@ -119,17 +157,25 @@ MindMirrorAI/
 │   ├── src/main/java/com/project/mentalhealth/
 │   │   ├── domain/{model,repository}
 │   │   ├── application/{ports/in,ports/out,service}
-│   │   ├── infrastructure/{persistence,security,ml,email}
-│   │   ├── interfaces/api/v1/{auth,journal,questionnaire,mood,trigger,
+│   │   ├── infrastructure/{persistence,security,ml,email,async}
+│   │   ├── interfaces/api/v1/{auth,journal,questionnaire,mood,trigger,checkin,
 │   │   │   recovery,report,analysis,analytics,goal,feedback,profile,admin,social}
 │   │   └── shared/
-│   └── src/main/resources/{application.yml,application-dev.yml,application-prod.yml}
+│   └── src/main/resources/
+│       ├── application.yml
+│       └── db/migration/         # Flyway V1–V14
 ├── frontend/           # React + TS + Vite + Tailwind
-│   └── src/{pages,components,context,lib,routes}
+│   └── src/
+│       ├── pages/
+│       ├── components/{admin,analysis,checkin,mindset,onboarding,triggers,charts,layout,ui,feedback}
+│       └── lib/                  # API hooks + pure helpers (unit tested)
 ├── ml-service/         # FastAPI ML service
-│   └── app/{main,analysis,preprocessing,ml_models,train,seed_data,schemas}.py
+│   ├── app/{main,analysis,preprocessing,ml_models,train,seed_data,schemas}.py
+│   ├── app/training/{corpus,quality,registry,runner}.py   # retraining pipeline
+│   └── models/                   # versioned artifacts + registry.json (gitignored)
 ├── database/schema/init.sql
 ├── docs/               # project documentation and analysis notes
+├── plans/              # implementation plans
 └── .github/workflows/ci.yml
 ```
 
@@ -182,6 +228,13 @@ Copy `.env.example` → `.env`. Key values:
 | `ML_SERVICE_BASE_URL` | Backend → ML service URL |
 | `ML_SYNTHETIC_TRAINING_SAMPLES` | Training subset size from synthetic corpus (default `58320`) |
 | `VITE_API_BASE_URL` | Frontend → backend API base |
+| `ML_TRAINING_TOKEN` | Shared secret guarding the ML service's `/train` and `/models/promote` endpoints |
+| `ML_TRAINING_HASH_SALT` | Salt used to pseudonymize exported training rows (**set a real value in production**) |
+| `ML_TRAINING_SCHEDULED` | Enable the weekly training run (default `false`; it stops at the gate either way) |
+| `ML_TRAINING_MAX_PER_USER` | Cap on exported examples per user (default `200`) |
+| `ANALYSIS_DERIVE_MOOD` / `ANALYSIS_DERIVE_TRIGGERS` | Whether journal analysis writes derived mood/trigger entries (default `true`) |
+| `ML_CONNECT_TIMEOUT_MS`, `ML_READ_TIMEOUT_MS`, `ML_CB_*` | ML client timeouts and circuit-breaker tuning |
+| `BASELINE_CRON` | When to recompute per-user baselines (default `0 30 2 * * *`) |
 
 ---
 
@@ -192,17 +245,25 @@ Base path: `/api/v1`
 | Area | Endpoints |
 |------|-----------|
 | Auth | `POST /auth/register` · `POST /auth/login` · `POST /auth/refresh` · `POST /auth/forgot-password` · `POST /auth/reset-password` · `POST /auth/verify-email` |
-| Journal / Mood | `GET,POST /journal` · `GET,POST /mood` |
+| Journal / Mood | `GET,POST /journal` · `GET,POST /mood` · `GET,POST /checkin` |
 | Questionnaire | `POST /questionnaire` |
-| Analysis | `POST /analysis/journal` · `POST /analysis/social` · `GET /analysis/mood-prediction` · `GET /analysis/model-metrics` |
-| Analytics | `GET /analytics/overview` · `GET /analytics/weekly-insights` |
-| Triggers / Recovery / Reports | `GET,POST /triggers` · `GET /recovery` · `GET /reports/summary` |
-| Goals / Feedback / Profile | `GET,POST /goals` · `POST /feedback` · `GET /me/profile` · `PATCH /me/profile` · `POST /me/change-password` |
+| Analysis | `POST /analysis/journal` · `POST /analysis/social` · `GET /analysis/results` · `GET /analysis/results/{id}` · `GET /analysis/journal/{entryId}` · `GET /analysis/mood-prediction` · `GET /analysis/model-metrics` · `GET /analysis/health` · `POST,GET /analysis/results/{id}/feedback` |
+| Analytics | `GET /analytics/dashboard` · `GET /analytics/mindset` · `GET /analytics/overview` · `GET /analytics/weekly-insights` |
+| Triggers / Recovery / Reports | `GET,POST /triggers` · `GET /triggers/pending` · `PATCH /triggers/{id}/confirm` · `PATCH /triggers/{id}/dismiss` · `GET /recovery` · `GET /reports/summary` |
+| Goals / Feedback / Profile | `GET,POST /goals` · `POST /feedback` · `GET /me/profile` · `PATCH /me/profile` · `POST /me/password` · `GET,PATCH /me/preferences` |
 | Social Accounts | `GET /social-accounts` · `POST /social-accounts/connect` · `DELETE /social-accounts/{id}` · `POST /social-accounts/import` |
-| Admin | `GET /admin/overview` · `GET /admin/users` · `PATCH /admin/users/{id}/enabled` · `GET /admin/feedback` · `GET /admin/model-metrics` |
+| Admin | `GET /admin/overview` · `GET /admin/users` · `PATCH /admin/users/{id}/enabled` · `GET /admin/feedback` · `GET /admin/model-metrics` · `GET /admin/prediction-feedback` · `GET /admin/prediction-feedback/stats` · `GET /admin/training-data/summary` · `POST /admin/models/retrain` · `GET /admin/models/runs` · `GET /admin/models/versions` · `POST /admin/models/promote` · `POST /admin/models/rollback` |
 
-ML service (internal): `POST /analyze/journal` · `POST /analyze/social` · `POST /predict/mood` ·
-`POST /detect/triggers` · `POST /insights/weekly` · `GET /models/metrics` · `GET /health`
+ML service (internal): `POST /analyze/journal` · `POST /analyze/social` · `POST /analyze/batch` ·
+`POST /predict/mood` · `POST /detect/triggers` · `POST /insights/weekly` · `GET /models/metrics` · `GET /health` ·
+`POST /train/run` · `GET /train/status/{id}` · `GET /models/versions` · `GET /models/active` ·
+`POST /models/promote` · `POST /models/rollback`
+
+Training and promotion endpoints require the `X-Training-Token` header (`ML_TRAINING_TOKEN`).
+
+Analysis responses now carry detected `triggers` and a `model_version` alongside the prediction, so a
+caller needs one round trip rather than two and every stored result is traceable to the model that
+produced it.
 
 `GET /models/metrics` includes label sets plus dataset profile (source size, training samples used).
 
@@ -225,14 +286,19 @@ ML service (internal): `POST /analyze/journal` · `POST /analyze/social` · `POS
 ## Testing
 
 ```bash
-# Frontend
+# Frontend — 56 tests
 cd frontend && npm run test        # Vitest
 
-# ML service
+# ML service — 37 tests
 cd ml-service && python -m pytest  # pytest
 
-# Backend
+# Backend — 79 tests
 cd backend && mvn test             # JUnit
 ```
+
+Backend and ML tests cover the parts that must not drift: the promotion gate's conditions, corpus
+assembly and per-user caps, consent filtering and PII scrubbing, the composite score's weight
+renormalization and its refusal to score on thin data, timezone-aware day bucketing, and the
+analysis retry path when the ML service is down.
 
 CI runs on GitHub Actions (`.github/workflows/ci.yml`).

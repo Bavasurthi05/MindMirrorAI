@@ -1,6 +1,7 @@
 package com.project.mentalhealth.application.service;
 
 import com.project.mentalhealth.application.ports.in.JournalUseCase;
+import com.project.mentalhealth.domain.model.AnalysisSourceType;
 import com.project.mentalhealth.domain.model.JournalEntry;
 import com.project.mentalhealth.domain.model.User;
 import com.project.mentalhealth.domain.repository.JournalEntryRepository;
@@ -21,10 +22,14 @@ public class JournalService implements JournalUseCase {
 
     private final JournalEntryRepository journalRepository;
     private final UserRepository userRepository;
+    private final AnalysisOrchestrator analysisOrchestrator;
 
-    public JournalService(JournalEntryRepository journalRepository, UserRepository userRepository) {
+    public JournalService(JournalEntryRepository journalRepository,
+                          UserRepository userRepository,
+                          AnalysisOrchestrator analysisOrchestrator) {
         this.journalRepository = journalRepository;
         this.userRepository = userRepository;
+        this.analysisOrchestrator = analysisOrchestrator;
     }
 
     @Override
@@ -36,7 +41,11 @@ public class JournalService implements JournalUseCase {
         entry.setTitle(request.getTitle());
         entry.setContent(request.getContent());
         entry.setMood(request.getMood());
-        return JournalEntryResponse.from(journalRepository.save(entry));
+        entry.setPromptId(request.getPromptId());
+        JournalEntry saved = journalRepository.save(entry);
+        // Queued, not awaited: the entry is safely stored whether or not the ML service answers.
+        analysisOrchestrator.submit(user, AnalysisSourceType.JOURNAL, saved.getId(), saved.getContent());
+        return JournalEntryResponse.from(saved);
     }
 
     @Override
@@ -68,10 +77,16 @@ public class JournalService implements JournalUseCase {
     public JournalEntryResponse update(String userEmail, Long id, JournalEntryRequest request) {
         User user = requireUser(userEmail);
         JournalEntry entry = requireEntry(id, user.getId());
+        boolean contentChanged = !java.util.Objects.equals(entry.getContent(), request.getContent());
         entry.setTitle(request.getTitle());
         entry.setContent(request.getContent());
         entry.setMood(request.getMood());
-        return JournalEntryResponse.from(journalRepository.save(entry));
+        entry.setPromptId(request.getPromptId());
+        JournalEntry saved = journalRepository.save(entry);
+        if (contentChanged) {
+            analysisOrchestrator.submit(user, AnalysisSourceType.JOURNAL, saved.getId(), saved.getContent());
+        }
+        return JournalEntryResponse.from(saved);
     }
 
     @Override

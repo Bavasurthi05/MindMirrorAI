@@ -34,6 +34,32 @@ app:
     base-path: /api/${app.api.version}
   ml:
     base-url: ${ML_SERVICE_BASE_URL:http://localhost:8000}
+    connect-timeout-ms: ${ML_CONNECT_TIMEOUT_MS:2000}
+    read-timeout-ms: ${ML_READ_TIMEOUT_MS:8000}
+    retry-backoff-ms: ${ML_RETRY_BACKOFF_MS:250}
+    circuit-breaker:
+      failure-threshold: ${ML_CB_FAILURE_THRESHOLD:5}
+      open-seconds: ${ML_CB_OPEN_SECONDS:30}
+    training:
+      # Guards the ML service's train/promote endpoints — they change what every user sees.
+      token: ${ML_TRAINING_TOKEN:}
+      request-timeout-ms: ${ML_TRAINING_TIMEOUT_MS:120000}
+      # Salt for pseudonymizing exported rows. Set a real value in production.
+      hash-salt: ${ML_TRAINING_HASH_SALT:mindmirror-local-salt}
+      max-per-user: ${ML_TRAINING_MAX_PER_USER:200}
+      # Weekly run that stops at the gate; promotion always stays a human decision.
+      scheduled-enabled: ${ML_TRAINING_SCHEDULED:false}
+      cron: ${ML_TRAINING_CRON:0 0 3 * * SUN}
+  baseline:
+    cron: ${BASELINE_CRON:0 30 2 * * *}
+  analysis:
+    # Journal analysis writes mood/trigger entries so analytics reflects ordinary use.
+    derive-mood-entries: ${ANALYSIS_DERIVE_MOOD:true}
+    derive-trigger-entries: ${ANALYSIS_DERIVE_TRIGGERS:true}
+    max-attempts: ${ANALYSIS_MAX_ATTEMPTS:3}
+    retry-interval-ms: ${ANALYSIS_RETRY_INTERVAL_MS:120000}
+    retry-initial-delay-ms: ${ANALYSIS_RETRY_INITIAL_DELAY_MS:60000}
+    retry-batch-size: ${ANALYSIS_RETRY_BATCH_SIZE:25}
 
 management:
   endpoints:

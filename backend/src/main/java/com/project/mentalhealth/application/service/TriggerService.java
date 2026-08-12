@@ -1,6 +1,7 @@
 package com.project.mentalhealth.application.service;
 
 import com.project.mentalhealth.application.ports.in.TriggerUseCase;
+import com.project.mentalhealth.domain.model.TriggerConfirmation;
 import com.project.mentalhealth.domain.model.TriggerEntry;
 import com.project.mentalhealth.domain.model.User;
 import com.project.mentalhealth.domain.repository.TriggerEntryRepository;
@@ -46,7 +47,8 @@ public class TriggerService implements TriggerUseCase {
     @Transactional(readOnly = true)
     public List<TriggerEntryResponse> list(String userEmail) {
         User user = requireUser(userEmail);
-        return triggerRepository.findByUserIdOrderByOccurredAtDesc(user.getId())
+        return triggerRepository
+                .findByUserIdAndConfirmationNotOrderByOccurredAtDesc(user.getId(), TriggerConfirmation.DISMISSED)
                 .stream()
                 .map(TriggerEntryResponse::from)
                 .toList();
@@ -56,7 +58,8 @@ public class TriggerService implements TriggerUseCase {
     @Transactional(readOnly = true)
     public TriggerAnalyticsResponse analytics(String userEmail) {
         User user = requireUser(userEmail);
-        List<TriggerEntry> entries = triggerRepository.findByUserIdOrderByOccurredAtDesc(user.getId());
+        List<TriggerEntry> entries = triggerRepository
+                .findByUserIdAndConfirmationNotOrderByOccurredAtDesc(user.getId(), TriggerConfirmation.DISMISSED);
 
         double overallAverage = entries.stream().mapToInt(TriggerEntry::getIntensity).average().orElse(0);
 
@@ -77,6 +80,46 @@ public class TriggerService implements TriggerUseCase {
                 .averageIntensity(round(overallAverage))
                 .categories(categories)
                 .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<TriggerEntryResponse> pendingConfirmation(String userEmail) {
+        User user = requireUser(userEmail);
+        return triggerRepository
+                .findByUserIdAndConfirmationOrderByOccurredAtDesc(user.getId(), TriggerConfirmation.PENDING)
+                .stream()
+                .map(TriggerEntryResponse::from)
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public TriggerEntryResponse confirm(String userEmail, Long id, Integer intensity) {
+        TriggerEntry entry = requireEntry(userEmail, id);
+        if (intensity != null) {
+            if (intensity < 1 || intensity > 10) {
+                throw new ApiException("Intensity must be between 1 and 10", HttpStatus.BAD_REQUEST);
+            }
+            entry.setIntensity(intensity);
+        }
+        entry.setConfirmation(TriggerConfirmation.CONFIRMED);
+        return TriggerEntryResponse.from(triggerRepository.save(entry));
+    }
+
+    @Override
+    @Transactional
+    public TriggerEntryResponse dismiss(String userEmail, Long id) {
+        TriggerEntry entry = requireEntry(userEmail, id);
+        // Kept rather than deleted: a wrong detection is useful signal for tuning the lexicon.
+        entry.setConfirmation(TriggerConfirmation.DISMISSED);
+        return TriggerEntryResponse.from(triggerRepository.save(entry));
+    }
+
+    private TriggerEntry requireEntry(String userEmail, Long id) {
+        User user = requireUser(userEmail);
+        return triggerRepository.findByIdAndUserId(id, user.getId())
+                .orElseThrow(() -> new ApiException("Trigger not found", HttpStatus.NOT_FOUND));
     }
 
     private double round(double value) {
