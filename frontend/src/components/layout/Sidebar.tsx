@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { cn } from '../../lib/cn';
+import { useAuth } from '../../context/AuthContext';
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -22,9 +23,19 @@ const navItems = [
   { label: 'Settings', to: '/settings' },
 ];
 
-const adminItems = [{ label: 'Admin', to: '/admin' }];
+// Admin-only. Previously rendered for everyone, so a regular user clicking "Admin" was
+// bounced straight back to the dashboard by AdminLayout — a link that did nothing.
+const adminItems = [
+  { label: 'Overview', to: '/admin' },
+  // The model management, retraining and feedback tools live here; nothing linked to
+  // this route before, so the whole page was reachable only by typing the URL.
+  { label: 'Models & Feedback', to: '/admin/analytics' },
+];
 
 export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ROLE_ADMIN';
+
   return (
     <aside
       className={cn(
@@ -60,6 +71,7 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
         ))}
       </nav>
 
+      {isAdmin ? (
       <div className="mt-8 border-t border-slate-200 pt-6">
         <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">Administration</p>
         <div className="mt-3 space-y-2">
@@ -67,6 +79,9 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
             <NavLink
               key={item.to}
               to={item.to}
+              // Without `end`, "/admin" also matches "/admin/analytics" and both
+              // links highlight at once.
+              end={item.to === '/admin'}
               className={({ isActive }) =>
                 cn(
                   'block rounded-xl px-4 py-3 text-sm font-medium transition',
@@ -80,6 +95,7 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
           ))}
         </div>
       </div>
+      ) : null}
     </aside>
   );
 }

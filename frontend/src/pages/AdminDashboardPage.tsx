@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -22,30 +23,7 @@ const analyticsCardsFallback = [
   { label: 'Assessments', value: '—', detail: 'Completed check-ins' },
 ];
 
-const growthData = {
-  labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'],
-  datasets: [
-    {
-      label: 'User growth',
-      data: [1800, 2200, 2800, 3600, 4700, 6400, 8200],
-      borderColor: '#6366f1',
-      backgroundColor: 'rgba(99, 102, 241, 0.15)',
-      tension: 0.35,
-      fill: true,
-    },
-  ],
-};
-
-const triggerDistribution = {
-  labels: ['Workload', 'Sleep', 'Social', 'Lifestyle'],
-  datasets: [
-    {
-      data: [42, 24, 18, 16],
-      backgroundColor: ['#6366f1', '#22d3ee', '#f59e0b', '#10b981'],
-      borderWidth: 0,
-    },
-  ],
-};
+const DISTRIBUTION_COLORS = ['#6366f1', '#22d3ee', '#f59e0b', '#10b981', '#fb7185', '#a78bfa'];
 
 export function AdminDashboardPage() {
   const { data: overview } = useAdminOverview();
@@ -53,6 +31,33 @@ export function AdminDashboardPage() {
   const { data: feedback = [] } = useAdminFeedback();
   const { data: modelMetrics } = useAdminModelMetrics();
   const setUserEnabled = useSetUserEnabled();
+
+  const growth = overview?.userGrowth ?? [];
+  const growthData = {
+    labels: growth.map((point) => point.label),
+    datasets: [
+      {
+        label: 'Total users',
+        data: growth.map((point) => point.cumulativeUsers),
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99, 102, 241, 0.15)',
+        tension: 0.35,
+        fill: true,
+      },
+    ],
+  };
+
+  const distribution = overview?.triggerDistribution ?? [];
+  const triggerDistributionData = {
+    labels: distribution.map((item) => item.category),
+    datasets: [
+      {
+        data: distribution.map((item) => item.count),
+        backgroundColor: distribution.map((_, i) => DISTRIBUTION_COLORS[i % DISTRIBUTION_COLORS.length]),
+        borderWidth: 0,
+      },
+    ],
+  };
 
   const analyticsCards = overview
     ? [
@@ -80,13 +85,17 @@ export function AdminDashboardPage() {
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-300">Admin Dashboard</p>
             <h1 className="mt-2 text-3xl font-semibold">Administrative oversight for the platform</h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300">
-              This mock admin view highlights user growth, prediction volume, wellness insights, and trigger trends.
+              Platform-wide sign-ups, engagement and trigger trends, plus user management, model
+              accuracy and feedback review.
             </p>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-slate-200 backdrop-blur">
-            <p className="font-semibold text-white">Snapshot</p>
-            <p>Monitoring 24 active insight clusters</p>
-          </div>
+          <Link
+            to="/admin/analytics"
+            className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-slate-200 backdrop-blur transition hover:bg-white/20"
+          >
+            <p className="font-semibold text-white">Models &amp; Feedback →</p>
+            <p>Retraining, quality gate, prediction feedback</p>
+          </Link>
         </div>
       </motion.section>
 
@@ -116,7 +125,17 @@ export function AdminDashboardPage() {
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">User Growth</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-900">Adoption over time</h2>
           <div className="mt-6">
-            <Line data={growthData} options={{ plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }} />
+            {growth.length === 0 ? (
+              <p className="text-sm text-slate-500">No sign-up history yet.</p>
+            ) : (
+              <Line
+                data={growthData}
+                options={{
+                  plugins: { legend: { display: false } },
+                  scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+                }}
+              />
+            )}
           </div>
         </motion.section>
 
@@ -129,7 +148,11 @@ export function AdminDashboardPage() {
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Wellness Statistics</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-900">Platform wellbeing health</h2>
           <div className="mt-6 mx-auto max-w-sm">
-            <Doughnut data={triggerDistribution} options={{ plugins: { legend: { position: 'bottom' } } }} />
+            {distribution.length === 0 ? (
+              <p className="text-sm text-slate-500">No triggers logged across the platform yet.</p>
+            ) : (
+              <Doughnut data={triggerDistributionData} options={{ plugins: { legend: { position: 'bottom' } } }} />
+            )}
           </div>
         </motion.section>
       </div>

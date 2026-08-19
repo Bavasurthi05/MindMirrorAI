@@ -1,6 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './api';
 
+export interface GrowthPoint {
+  /** e.g. "Mar 2026". */
+  label: string;
+  newUsers: number;
+  cumulativeUsers: number;
+}
+
+export interface CategoryCount {
+  category: string;
+  count: number;
+}
+
 export interface AdminOverview {
   totalUsers: number;
   verifiedUsers: number;
@@ -9,6 +21,10 @@ export interface AdminOverview {
   totalAssessments: number;
   totalTriggers: number;
   totalRecoveryActions: number;
+  /** Real sign-ups for the trailing 6 months, oldest first. */
+  userGrowth: GrowthPoint[];
+  /** Trigger categories across all users, most common first. */
+  triggerDistribution: CategoryCount[];
 }
 
 export function useAdminOverview() {
