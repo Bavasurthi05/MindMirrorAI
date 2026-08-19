@@ -5,10 +5,12 @@ import com.project.mentalhealth.application.ports.out.MlAnalysisPort;
 import com.project.mentalhealth.domain.model.TriggerConfirmation;
 import com.project.mentalhealth.domain.model.TriggerEntry;
 import com.project.mentalhealth.domain.model.User;
+import com.project.mentalhealth.domain.repository.AdminAuditLogRepository;
 import com.project.mentalhealth.domain.repository.AssessmentSubmissionRepository;
 import com.project.mentalhealth.domain.repository.JournalEntryRepository;
 import com.project.mentalhealth.domain.repository.MoodEntryRepository;
 import com.project.mentalhealth.domain.repository.RecoveryActionRepository;
+import com.project.mentalhealth.domain.repository.RoleRepository;
 import com.project.mentalhealth.domain.repository.TriggerEntryRepository;
 import com.project.mentalhealth.domain.repository.UserRepository;
 import com.project.mentalhealth.interfaces.api.v1.admin.dto.AdminOverviewResponse;
@@ -41,13 +43,16 @@ class AdminServiceTest {
     @Mock private RecoveryActionRepository recoveryRepository;
     @Mock private FeedbackUseCase feedbackUseCase;
     @Mock private MlAnalysisPort mlAnalysisPort;
+    @Mock private RoleRepository roleRepository;
+    @Mock private AdminAuditLogRepository auditLogRepository;
 
     private AdminService service;
 
     @BeforeEach
     void setUp() {
         service = new AdminService(userRepository, journalRepository, moodRepository,
-                assessmentRepository, triggerRepository, recoveryRepository, feedbackUseCase, mlAnalysisPort);
+                assessmentRepository, triggerRepository, recoveryRepository, feedbackUseCase,
+                mlAnalysisPort, roleRepository, auditLogRepository);
         given(userRepository.findAll()).willReturn(List.of());
         given(triggerRepository.findAll()).willReturn(List.of());
     }

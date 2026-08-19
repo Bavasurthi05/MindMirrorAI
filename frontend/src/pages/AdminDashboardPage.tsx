@@ -12,7 +12,22 @@ import {
   Legend,
 } from 'chart.js';
 import { Line, Doughnut } from 'react-chartjs-2';
-import { useAdminFeedback, useAdminModelMetrics, useAdminOverview, useAdminUsers, useSetUserEnabled } from '../lib/admin';
+import { useState } from 'react';
+import {
+  ASSIGNABLE_ROLES,
+  roleLabel,
+  useAdminAuditLog,
+  useAdminFeedback,
+  useAdminModelMetrics,
+  useAdminOverview,
+  useAdminUsers,
+  useSetUserEnabled,
+  useSetUserRole,
+  type AdminUser,
+  type AssignableRole,
+} from '../lib/admin';
+import { useAuth } from '../context/AuthContext';
+import { ApiError } from '../lib/api';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend);
 
@@ -31,6 +46,43 @@ export function AdminDashboardPage() {
   const { data: feedback = [] } = useAdminFeedback();
   const { data: modelMetrics } = useAdminModelMetrics();
   const setUserEnabled = useSetUserEnabled();
+  const setUserRole = useSetUserRole();
+  const { data: auditLog = [] } = useAdminAuditLog(10);
+  const { user: currentUser } = useAuth();
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const currentEmail = currentUser?.email?.toLowerCase() ?? null;
+
+  /** Granting or revoking admin is worth an explicit confirmation. */
+  const handleRoleChange = async (target: AdminUser, role: AssignableRole) => {
+    setActionError(null);
+    if (role === target.role) return;
+
+    const promoting = role === 'ROLE_ADMIN';
+    const message = promoting
+      ? `Make ${target.email} an administrator? They will be able to manage every account and deploy models.`
+      : `Remove administrator rights from ${target.email}?`;
+    if (!window.confirm(message)) return;
+
+    try {
+      await setUserRole.mutateAsync({ id: target.id, role });
+    } catch (error) {
+      // The 409s carry the reason (self-change, last admin) — show it as-is.
+      setActionError(error instanceof ApiError ? error.message : 'Could not update that role.');
+    }
+  };
+
+  const handleEnabledChange = async (target: AdminUser) => {
+    setActionError(null);
+    if (target.enabled && !window.confirm(`Disable ${target.email}? They will not be able to sign in.`)) {
+      return;
+    }
+    try {
+      await setUserEnabled.mutateAsync({ id: target.id, enabled: !target.enabled });
+    } catch (error) {
+      setActionError(error instanceof ApiError ? error.message : 'Could not update that account.');
+    }
+  };
 
   const growth = overview?.userGrowth ?? [];
   const growthData = {
@@ -166,27 +218,75 @@ export function AdminDashboardPage() {
         >
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">User management</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-900">Accounts and access</h2>
+          <p className="mt-2 text-sm text-slate-500">
+            Administrators can manage every account and deploy models. You cannot change your own
+            role or disable your own account, and the last active administrator cannot be removed.
+          </p>
+
+          {actionError ? (
+            <p className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{actionError}</p>
+          ) : null}
+
           <div className="mt-6 space-y-3">
-            {users.map((user) => (
-              <div key={user.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-slate-900">{user.fullName}</p>
-                    <p className="text-sm text-slate-600">{user.email}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700">{user.role}</span>
-                    <button
-                      type="button"
-                      onClick={() => setUserEnabled.mutate({ id: user.id, enabled: !user.enabled })}
-                      className={`rounded-full px-3 py-1 text-sm font-semibold ${user.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}
-                    >
-                      {user.enabled ? 'Enabled' : 'Disabled'}
-                    </button>
+            {users.map((user) => {
+              const isSelf = currentEmail !== null && user.email.toLowerCase() === currentEmail;
+              const isAdmin = user.role === 'ROLE_ADMIN';
+              return (
+                <div key={user.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900">
+                        {user.fullName}
+                        {isSelf ? (
+                          <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                            You
+                          </span>
+                        ) : null}
+                      </p>
+                      <p className="truncate text-sm text-slate-600">{user.email}</p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="sr-only" htmlFor={`role-${user.id}`}>
+                        Role for {user.email}
+                      </label>
+                      <select
+                        id={`role-${user.id}`}
+                        value={user.role}
+                        // Self-changes are blocked in the UI as well as the API, so the
+                        // control never invites an action that is guaranteed to fail.
+                        disabled={isSelf || setUserRole.isPending}
+                        onChange={(event) => handleRoleChange(user, event.target.value as AssignableRole)}
+                        title={isSelf ? 'You cannot change your own role' : undefined}
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                          isAdmin
+                            ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                            : 'border-slate-200 bg-white text-slate-700'
+                        } disabled:cursor-not-allowed disabled:opacity-60`}
+                      >
+                        {ASSIGNABLE_ROLES.map((role) => (
+                          <option key={role} value={role}>
+                            {roleLabel(role)}
+                          </option>
+                        ))}
+                      </select>
+
+                      <button
+                        type="button"
+                        disabled={isSelf || setUserEnabled.isPending}
+                        title={isSelf ? 'You cannot disable your own account' : undefined}
+                        onClick={() => handleEnabledChange(user)}
+                        className={`rounded-full px-3 py-1 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${
+                          user.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                        }`}
+                      >
+                        {user.enabled ? 'Enabled' : 'Disabled'}
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </motion.section>
 
@@ -211,6 +311,43 @@ export function AdminDashboardPage() {
           </div>
         </motion.section>
       </div>
+
+      <motion.section
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, delay: 0.13 }}
+        className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-sm"
+      >
+        <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Audit log</p>
+        <h2 className="mt-2 text-2xl font-semibold text-slate-900">Recent account changes</h2>
+        <p className="mt-2 text-sm text-slate-500">
+          Role and access changes are recorded so they can be explained later.
+        </p>
+        <div className="mt-6 space-y-2">
+          {auditLog.length === 0 ? (
+            <p className="text-sm text-slate-500">No account changes recorded yet.</p>
+          ) : (
+            auditLog.map((entry) => (
+              <div
+                key={entry.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-slate-50 px-4 py-3 text-sm"
+              >
+                <span className="text-slate-700">
+                  <span className="font-medium text-slate-900">{entry.actorEmail}</span>
+                  {entry.action === 'ROLE_CHANGED' ? ' changed the role of ' : ' set '}
+                  <span className="font-medium text-slate-900">{entry.targetEmail}</span>
+                  {entry.action === 'ROLE_CHANGED'
+                    ? ` from ${roleLabel(entry.previousValue ?? '')} to ${roleLabel(entry.newValue ?? '')}`
+                    : ` to ${entry.newValue}`}
+                </span>
+                <span className="text-xs text-slate-500">
+                  {new Date(entry.createdAt).toLocaleString()}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </motion.section>
 
       <motion.section
         initial={{ opacity: 0, y: 14 }}

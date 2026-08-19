@@ -51,12 +51,60 @@ export function useAdminUsers() {
   });
 }
 
+export const ASSIGNABLE_ROLES = ['ROLE_USER', 'ROLE_ADMIN'] as const;
+export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
+
+export function roleLabel(role: string): string {
+  return role === 'ROLE_ADMIN' ? 'Administrator' : 'User';
+}
+
+export interface AdminAuditEntry {
+  id: number;
+  action: 'ROLE_CHANGED' | 'ACCESS_CHANGED';
+  actorEmail: string;
+  targetUserId: number | null;
+  targetEmail: string | null;
+  previousValue: string | null;
+  newValue: string | null;
+  detail: string | null;
+  createdAt: string;
+}
+
+/** Both admin mutations touch the same lists, so they invalidate together. */
+function invalidateAccountViews(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['admin', 'users'] });
+  qc.invalidateQueries({ queryKey: ['admin', 'audit-log'] });
+  qc.invalidateQueries({ queryKey: ['admin', 'overview'] });
+}
+
 export function useSetUserEnabled() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) =>
       apiRequest<AdminUser>(`/admin/users/${id}/enabled?enabled=${enabled}`, { method: 'PATCH' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'users'] }),
+    onSuccess: () => invalidateAccountViews(qc),
+  });
+}
+
+/**
+ * Promote or demote a user.
+ *
+ * <p>The backend refuses self-changes and demoting the last active admin; those come back
+ * as 409s with a message worth showing verbatim.
+ */
+export function useSetUserRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, role }: { id: number; role: AssignableRole }) =>
+      apiRequest<AdminUser>(`/admin/users/${id}/role?role=${encodeURIComponent(role)}`, { method: 'PATCH' }),
+    onSuccess: () => invalidateAccountViews(qc),
+  });
+}
+
+export function useAdminAuditLog(limit = 25) {
+  return useQuery({
+    queryKey: ['admin', 'audit-log', limit],
+    queryFn: () => apiRequest<AdminAuditEntry[]>(`/admin/audit-log?limit=${limit}`),
   });
 }
 

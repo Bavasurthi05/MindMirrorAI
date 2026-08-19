@@ -11,4 +11,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
     boolean existsByEmail(String email);
     long countByEmailVerifiedTrue();
+
+    /**
+     * Admins who can still sign in. Used to refuse the last one being demoted or
+     * disabled, which would lock everybody out of the admin area.
+     */
+    long countByRoleNameAndEnabledTrue(String roleName);
 }

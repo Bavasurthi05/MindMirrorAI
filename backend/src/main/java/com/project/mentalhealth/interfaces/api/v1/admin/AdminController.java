@@ -6,6 +6,7 @@ import com.project.mentalhealth.application.ports.out.MlTrainingPort;
 import com.project.mentalhealth.application.service.ModelTrainingService;
 import com.project.mentalhealth.application.service.PredictionFeedbackService;
 import com.project.mentalhealth.application.service.TrainingDataExportService;
+import com.project.mentalhealth.interfaces.api.v1.admin.dto.AdminAuditEntryResponse;
 import com.project.mentalhealth.interfaces.api.v1.admin.dto.AdminOverviewResponse;
 import com.project.mentalhealth.interfaces.api.v1.admin.dto.AdminUserResponse;
 import com.project.mentalhealth.interfaces.api.v1.admin.dto.FeedbackStatsResponse;
@@ -114,8 +115,26 @@ public class AdminController {
     }
 
     @PatchMapping("/users/{id}/enabled")
-    public ApiResponse<AdminUserResponse> setEnabled(@PathVariable Long id, @RequestParam boolean enabled) {
-        return ApiResponse.success(adminUseCase.setUserEnabled(id, enabled));
+    public ApiResponse<AdminUserResponse> setEnabled(Authentication authentication,
+                                                     @PathVariable Long id,
+                                                     @RequestParam boolean enabled) {
+        return ApiResponse.success(adminUseCase.setUserEnabled(authentication.getName(), id, enabled),
+                enabled ? "Account enabled" : "Account disabled");
+    }
+
+    /** Promote or demote a user. Guarded against self-changes and last-admin demotion. */
+    @PatchMapping("/users/{id}/role")
+    public ApiResponse<AdminUserResponse> setRole(Authentication authentication,
+                                                  @PathVariable Long id,
+                                                  @RequestParam String role) {
+        return ApiResponse.success(adminUseCase.setUserRole(authentication.getName(), id, role),
+                "Role updated");
+    }
+
+    /** Recent privileged account changes. */
+    @GetMapping("/audit-log")
+    public ApiResponse<List<AdminAuditEntryResponse>> auditLog(@RequestParam(defaultValue = "25") int limit) {
+        return ApiResponse.success(adminUseCase.auditLog(limit));
     }
 
     @GetMapping("/feedback")
