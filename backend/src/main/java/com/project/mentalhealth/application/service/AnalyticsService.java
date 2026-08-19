@@ -27,7 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -53,6 +53,7 @@ public class AnalyticsService implements AnalyticsUseCase {
     private final JournalEntryRepository journalRepository;
     private final MlAnalysisPort mlAnalysisPort;
     private final MindsetScoringService mindsetScoringService;
+    private final UserPreferencesService preferencesService;
 
     public AnalyticsService(UserRepository userRepository,
                             MoodEntryRepository moodRepository,
@@ -61,7 +62,8 @@ public class AnalyticsService implements AnalyticsUseCase {
                             RecoveryActionRepository recoveryRepository,
                             JournalEntryRepository journalRepository,
                             MlAnalysisPort mlAnalysisPort,
-                            MindsetScoringService mindsetScoringService) {
+                            MindsetScoringService mindsetScoringService,
+                            UserPreferencesService preferencesService) {
         this.userRepository = userRepository;
         this.moodRepository = moodRepository;
         this.triggerRepository = triggerRepository;
@@ -70,6 +72,7 @@ public class AnalyticsService implements AnalyticsUseCase {
         this.journalRepository = journalRepository;
         this.mlAnalysisPort = mlAnalysisPort;
         this.mindsetScoringService = mindsetScoringService;
+        this.preferencesService = preferencesService;
     }
 
     @Override
@@ -78,6 +81,9 @@ public class AnalyticsService implements AnalyticsUseCase {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ApiException("User not found", HttpStatus.UNAUTHORIZED));
         Long userId = user.getId();
+        // Day buckets must match the dashboard's, which uses the user's own zone; in UTC the
+        // same check-in can land on a different calendar day in each view.
+        ZoneId zone = preferencesService.zoneFor(userId);
 
         List<MoodEntry> moods = moodRepository.findByUserIdOrderByRecordedAtDesc(userId);
         List<TriggerEntry> triggers = triggerRepository
@@ -103,10 +109,10 @@ public class AnalyticsService implements AnalyticsUseCase {
         return AnalyticsOverviewResponse.builder()
                 .overallWellness(overallWellness)
                 .radar(buildRadar(averageMood, avgTriggerIntensity, triggerByCategory, recoveryScore))
-                .heatmap(buildHeatmap(moods))
-                .emotionTimeline(buildEmotionTimeline(moods))
-                .weeklyTrend(buildWeeklyTrend(moods))
-                .moodSeries(buildMoodSeries(moods))
+                .heatmap(buildHeatmap(moods, zone))
+                .emotionTimeline(buildEmotionTimeline(moods, zone))
+                .weeklyTrend(buildWeeklyTrend(moods, zone))
+                .moodSeries(buildMoodSeries(moods, zone))
                 .emotionDistribution(buildEmotionDistribution(moods))
                 .triggerDistribution(buildTriggerDistribution(triggerByCategory))
                 .build();
@@ -172,15 +178,15 @@ public class AnalyticsService implements AnalyticsUseCase {
         return triggerByCategory.getOrDefault(category, 0.0);
     }
 
-    private List<HeatCell> buildHeatmap(List<MoodEntry> moods) {
+    private List<HeatCell> buildHeatmap(List<MoodEntry> moods, ZoneId zone) {
         Map<LocalDate, List<Integer>> byDay = new LinkedHashMap<>();
         for (MoodEntry mood : moods) {
-            LocalDate day = mood.getRecordedAt().atZone(ZoneOffset.UTC).toLocalDate();
+            LocalDate day = mood.getRecordedAt().atZone(zone).toLocalDate();
             byDay.computeIfAbsent(day, k -> new ArrayList<>()).add(mood.getMoodScore());
         }
 
         List<HeatCell> cells = new ArrayList<>();
-        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        LocalDate today = LocalDate.now(zone);
         for (int i = HEATMAP_DAYS - 1; i >= 0; i--) {
             LocalDate day = today.minusDays(i);
             List<Integer> scores = byDay.get(day);
@@ -191,11 +197,11 @@ public class AnalyticsService implements AnalyticsUseCase {
         return cells;
     }
 
-    private List<EmotionPoint> buildEmotionTimeline(List<MoodEntry> moods) {
+    private List<EmotionPoint> buildEmotionTimeline(List<MoodEntry> moods, ZoneId zone) {
         return moods.stream()
                 .limit(TIMELINE_POINTS)
                 .map(mood -> EmotionPoint.builder()
-                        .date(mood.getRecordedAt().atZone(ZoneOffset.UTC).toLocalDate().format(ISO_DATE))
+                        .date(mood.getRecordedAt().atZone(zone).toLocalDate().format(ISO_DATE))
                         .label(mood.getMoodLabel() == null ? "neutral" : mood.getMoodLabel())
                         .score(mood.getMoodScore())
                         .build())
@@ -205,15 +211,15 @@ public class AnalyticsService implements AnalyticsUseCase {
                 }));
     }
 
-    private List<Metric> buildWeeklyTrend(List<MoodEntry> moods) {
-        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+    private List<Metric> buildWeeklyTrend(List<MoodEntry> moods, ZoneId zone) {
+        LocalDate today = LocalDate.now(zone);
         List<Metric> trend = new ArrayList<>();
         for (int week = 3; week >= 0; week--) {
             LocalDate start = today.minusDays((week + 1L) * 7 - 1);
             LocalDate end = today.minusDays(week * 7L);
             double avg = moods.stream()
                     .filter(mood -> {
-                        LocalDate day = mood.getRecordedAt().atZone(ZoneOffset.UTC).toLocalDate();
+                        LocalDate day = mood.getRecordedAt().atZone(zone).toLocalDate();
                         return !day.isBefore(start) && !day.isAfter(end);
                     })
                     .mapToInt(MoodEntry::getMoodScore)
@@ -224,14 +230,14 @@ public class AnalyticsService implements AnalyticsUseCase {
         return trend;
     }
 
-    private List<SeriesPoint> buildMoodSeries(List<MoodEntry> moods) {
-        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+    private List<SeriesPoint> buildMoodSeries(List<MoodEntry> moods, ZoneId zone) {
+        LocalDate today = LocalDate.now(zone);
         LocalDate cutoff = today.minusDays(MOOD_SERIES_DAYS - 1L);
         return moods.stream()
-                .filter(mood -> !mood.getRecordedAt().atZone(ZoneOffset.UTC).toLocalDate().isBefore(cutoff))
+                .filter(mood -> !mood.getRecordedAt().atZone(zone).toLocalDate().isBefore(cutoff))
                 .sorted((a, b) -> a.getRecordedAt().compareTo(b.getRecordedAt()))
                 .map(mood -> SeriesPoint.builder()
-                        .date(mood.getRecordedAt().atZone(ZoneOffset.UTC).toLocalDate().format(ISO_DATE))
+                        .date(mood.getRecordedAt().atZone(zone).toLocalDate().format(ISO_DATE))
                         .score(mood.getMoodScore())
                         .build())
                 .toList();

@@ -14,7 +14,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.DayOfWeek;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -22,12 +27,30 @@ import java.util.stream.Collectors;
 @Service
 public class TriggerService implements TriggerUseCase {
 
+    /** Time-of-day buckets, by local hour. Night wraps past midnight. */
+    static final List<String> SLOTS = List.of("Morning", "Midday", "Evening", "Night");
+    static final List<DayOfWeek> WEEK = List.of(
+            DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY,
+            DayOfWeek.FRIDAY, DayOfWeek.SATURDAY, DayOfWeek.SUNDAY);
+
     private final TriggerEntryRepository triggerRepository;
     private final UserRepository userRepository;
+    private final UserPreferencesService preferencesService;
 
-    public TriggerService(TriggerEntryRepository triggerRepository, UserRepository userRepository) {
+    public TriggerService(TriggerEntryRepository triggerRepository,
+                          UserRepository userRepository,
+                          UserPreferencesService preferencesService) {
         this.triggerRepository = triggerRepository;
         this.userRepository = userRepository;
+        this.preferencesService = preferencesService;
+    }
+
+    /** Which time-of-day bucket a local hour falls in. */
+    static String slotForHour(int hour) {
+        if (hour >= 5 && hour < 11) return "Morning";
+        if (hour >= 11 && hour < 17) return "Midday";
+        if (hour >= 17 && hour < 22) return "Evening";
+        return "Night";
     }
 
     @Override
@@ -75,11 +98,62 @@ public class TriggerService implements TriggerUseCase {
                 .sorted((a, b) -> Long.compare(b.getCount(), a.getCount()))
                 .toList();
 
+        ZoneId zone = preferencesService.zoneFor(user.getId());
         return TriggerAnalyticsResponse.builder()
                 .totalCount(entries.size())
                 .averageIntensity(round(overallAverage))
                 .categories(categories)
+                .heatmap(buildHeatmap(entries, zone))
+                .weekdayIntensity(buildWeekdayIntensity(entries, zone))
                 .build();
+    }
+
+    /**
+     * Weekday × time-of-day intensity grid, always the full 7×4 so the UI can render a stable
+     * table. Empty cells carry a null intensity rather than a zero, which would read as "calm"
+     * instead of "nothing logged".
+     */
+    private List<TriggerAnalyticsResponse.HeatCell> buildHeatmap(List<TriggerEntry> entries, ZoneId zone) {
+        Map<String, List<Integer>> grouped = new HashMap<>();
+        for (TriggerEntry entry : entries) {
+            ZonedDateTime local = entry.getOccurredAt().atZone(zone);
+            String key = local.getDayOfWeek().name() + "|" + slotForHour(local.getHour());
+            grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(entry.getIntensity());
+        }
+
+        List<TriggerAnalyticsResponse.HeatCell> cells = new ArrayList<>();
+        for (String slot : SLOTS) {
+            for (DayOfWeek day : WEEK) {
+                List<Integer> values = grouped.get(day.name() + "|" + slot);
+                cells.add(TriggerAnalyticsResponse.HeatCell.builder()
+                        .day(day.name())
+                        .slot(slot)
+                        .averageIntensity(values == null ? null
+                                : round(values.stream().mapToInt(Integer::intValue).average().orElse(0)))
+                        .count(values == null ? 0 : values.size())
+                        .build());
+            }
+        }
+        return cells;
+    }
+
+    private List<TriggerAnalyticsResponse.WeekdayStat> buildWeekdayIntensity(List<TriggerEntry> entries, ZoneId zone) {
+        Map<DayOfWeek, List<Integer>> byDay = new HashMap<>();
+        for (TriggerEntry entry : entries) {
+            DayOfWeek day = entry.getOccurredAt().atZone(zone).getDayOfWeek();
+            byDay.computeIfAbsent(day, k -> new ArrayList<>()).add(entry.getIntensity());
+        }
+        return WEEK.stream()
+                .map(day -> {
+                    List<Integer> values = byDay.get(day);
+                    return TriggerAnalyticsResponse.WeekdayStat.builder()
+                            .day(day.name())
+                            .averageIntensity(values == null ? null
+                                    : round(values.stream().mapToInt(Integer::intValue).average().orElse(0)))
+                            .count(values == null ? 0 : values.size())
+                            .build();
+                })
+                .toList();
     }
 
     @Override

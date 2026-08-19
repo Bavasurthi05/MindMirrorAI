@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Chart as ChartJS,
@@ -14,8 +14,18 @@ import {
 } from 'chart.js';
 import { Pie, Bar } from 'react-chartjs-2';
 import { Button } from '../components/ui/button';
-import { useLogTrigger, useTriggerAnalytics, useTriggers } from '../lib/triggers';
+import {
+  TRIGGER_DAYS,
+  TRIGGER_DAY_LABELS,
+  TRIGGER_SLOTS,
+  findHeatCell,
+  triggerHeatClass,
+  useLogTrigger,
+  useTriggerAnalytics,
+  useTriggers,
+} from '../lib/triggers';
 import { ApiError } from '../lib/api';
+import { usePreferences } from '../lib/preferences';
 
 ChartJS.register(
   ArcElement,
@@ -30,45 +40,6 @@ ChartJS.register(
 );
 
 const piePalette = ['#6366f1', '#22d3ee', '#f59e0b', '#10b981', '#fb7185', '#a78bfa', '#60a5fa'];
-
-const barData = {
-  labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-  datasets: [
-    {
-      label: 'Trigger intensity',
-      data: [4, 6, 5, 7, 3, 8, 5],
-      backgroundColor: ['#818cf8', '#60a5fa', '#22d3ee', '#34d399', '#f59e0b', '#fb7185', '#a78bfa'],
-      borderRadius: 10,
-    },
-  ],
-};
-
-const timelineItems = [
-  { day: 'Monday', time: '08:30', event: 'Heavy workload affected focus and calm.' },
-  { day: 'Wednesday', time: '21:00', event: 'Poor sleep quality increased emotional strain.' },
-  { day: 'Friday', time: '18:15', event: 'Social fatigue became more noticeable after back-to-back meetings.' },
-];
-
-const heatMapRows = [
-  { label: 'Morning', values: [1, 3, 2, 1, 2, 3, 2] },
-  { label: 'Midday', values: [4, 5, 3, 4, 3, 5, 4] },
-  { label: 'Evening', values: [2, 4, 3, 2, 3, 4, 3] },
-  { label: 'Night', values: [3, 2, 2, 3, 2, 4, 3] },
-];
-
-const ranking = [
-  { label: 'Workload pressure', score: '9.2/10' },
-  { label: 'Sleep disruption', score: '7.8/10' },
-  { label: 'Social fatigue', score: '6.4/10' },
-  { label: 'Routine drift', score: '5.9/10' },
-];
-
-function getHeatCellClass(value: number) {
-  if (value >= 4) return 'bg-rose-500';
-  if (value === 3) return 'bg-amber-400';
-  if (value === 2) return 'bg-sky-400';
-  return 'bg-emerald-400';
-}
 
 const relativeTime = (iso: string) => {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -85,6 +56,7 @@ const triggerCategories = ['Workload', 'Sleep', 'Social', 'Routine', 'Health', '
 
 export function TriggerAnalyticsPage() {
   const { data: analytics } = useTriggerAnalytics();
+  const { data: preferences } = usePreferences();
   const { data: triggers = [] } = useTriggers();
   const logTrigger = useLogTrigger();
   const [category, setCategory] = useState(triggerCategories[0]);
@@ -113,6 +85,47 @@ export function TriggerAnalyticsPage() {
     }),
     [categories],
   );
+
+  const weekdayIntensity = analytics?.weekdayIntensity ?? [];
+  const hasWeekdayData = weekdayIntensity.some((stat) => stat.count > 0);
+
+  const weekdayBarData = useMemo(
+    () => ({
+      labels: TRIGGER_DAY_LABELS,
+      datasets: [
+        {
+          label: 'Avg intensity',
+          // Chart.js renders null as a gap, which is what a day with no triggers should be.
+          data: TRIGGER_DAYS.map(
+            (day) => weekdayIntensity.find((stat) => stat.day === day)?.averageIntensity ?? null,
+          ),
+          backgroundColor: ['#818cf8', '#60a5fa', '#22d3ee', '#34d399', '#f59e0b', '#fb7185', '#a78bfa'],
+          borderRadius: 10,
+        },
+      ],
+    }),
+    [weekdayIntensity],
+  );
+
+  // Strongest categories by average intensity, from the user's own logged triggers.
+  const ranking = [...categories]
+    .sort((a, b) => b.averageIntensity - a.averageIntensity)
+    .slice(0, 4);
+
+  // Same zone the heat map buckets by, so a trigger cannot read as "Wednesday morning"
+  // in one panel and "Wednesday 19:00" in the other.
+  const timeZone = preferences?.timezone || undefined;
+  const timelineItems = triggers.slice(0, 4).map((entry) => {
+    const when = new Date(entry.occurredAt);
+    return {
+      id: entry.id,
+      category: entry.category,
+      intensity: entry.intensity,
+      note: entry.note,
+      day: when.toLocaleDateString(undefined, { weekday: 'long', timeZone }),
+      time: when.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZone }),
+    };
+  });
 
   const recentTriggers = triggers.slice(0, 5).map((entry) => ({
     title: `${entry.category} · intensity ${entry.intensity}`,
@@ -233,7 +246,19 @@ export function TriggerAnalyticsPage() {
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Bar Chart</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-900">Weekly trigger intensity</h2>
           <div className="mt-6">
-            <Bar data={barData} options={{ scales: { y: { beginAtZero: true, ticks: { stepSize: 2 } } } }} />
+            {hasWeekdayData ? (
+              <Bar
+                data={weekdayBarData}
+                options={{
+                  plugins: { legend: { display: false } },
+                  scales: { y: { beginAtZero: true, max: 10, ticks: { stepSize: 2 } } },
+                }}
+              />
+            ) : (
+              <p className="text-sm text-slate-500">
+                No triggers logged yet — log one below, or let your reflections surface them.
+              </p>
+            )}
           </div>
         </motion.section>
       </div>
@@ -248,18 +273,26 @@ export function TriggerAnalyticsPage() {
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Timeline</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-900">Trigger events over time</h2>
           <div className="mt-6 space-y-4">
-            {timelineItems.map((item) => (
-              <div key={item.day + item.time} className="flex gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700">
-                  {item.time.split(':')[0]}
+            {timelineItems.length === 0 ? (
+              <p className="text-sm text-slate-500">Nothing logged yet.</p>
+            ) : (
+              timelineItems.map((item) => (
+                <div key={item.id} className="flex gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700">
+                    {item.intensity}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-slate-900">{item.category}</p>
+                    <p className="text-sm text-slate-500">
+                      {item.day} · {item.time}
+                    </p>
+                    {item.note ? (
+                      <p className="mt-2 text-sm leading-6 text-slate-600">{item.note}</p>
+                    ) : null}
+                  </div>
                 </div>
-                <div>
-                  <p className="font-semibold text-slate-900">{item.day}</p>
-                  <p className="text-sm text-slate-500">{item.time}</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">{item.event}</p>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </motion.section>
 
@@ -271,25 +304,50 @@ export function TriggerAnalyticsPage() {
         >
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Heat Map</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-900">Intensity across the week</h2>
+          <p className="mt-1 text-sm text-slate-500">Average intensity by day and time of day, in your timezone.</p>
           <div className="mt-6 overflow-hidden rounded-[1.4rem] border border-slate-200">
             <div className="grid grid-cols-[90px_repeat(7,minmax(0,1fr))] bg-slate-50 text-sm text-slate-600">
               <div className="border-b border-slate-200 p-3 font-medium">Time</div>
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
-                <div key={day} className="border-b border-slate-200 border-l border-slate-200 p-3 text-center font-medium">
+              {TRIGGER_DAY_LABELS.map((day) => (
+                <div key={day} className="border-b border-l border-slate-200 p-3 text-center font-medium">
                   {day}
                 </div>
               ))}
-              {heatMapRows.map((row) => (
-                <>
-                  <div key={row.label} className="border-b border-slate-200 p-3 font-medium text-slate-700">
-                    {row.label}
-                  </div>
-                  {row.values.map((value, index) => (
-                    <div key={`${row.label}-${index}`} className={`border-b border-l border-slate-200 p-3 ${getHeatCellClass(value)}`} />
-                  ))}
-                </>
+              {TRIGGER_SLOTS.map((slot) => (
+                // Key belongs on the fragment, not the first child, or React cannot match rows.
+                <Fragment key={slot}>
+                  <div className="border-b border-slate-200 p-3 font-medium text-slate-700">{slot}</div>
+                  {TRIGGER_DAYS.map((day) => {
+                    const cell = findHeatCell(analytics?.heatmap, day, slot);
+                    const intensity = cell?.averageIntensity ?? null;
+                    return (
+                      <div
+                        key={`${slot}-${day}`}
+                        title={
+                          intensity === null
+                            ? `${slot} ${day.toLowerCase()} — nothing logged`
+                            : `${slot} ${day.toLowerCase()} — ${intensity.toFixed(1)}/10 across ${cell?.count} entr${cell?.count === 1 ? 'y' : 'ies'}`
+                        }
+                        className={`border-b border-l border-slate-200 p-3 ${triggerHeatClass(intensity)}`}
+                      />
+                    );
+                  })}
+                </Fragment>
               ))}
             </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+            <span>Milder</span>
+            <span className="h-3 w-3 rounded-[3px] bg-emerald-400" />
+            <span className="h-3 w-3 rounded-[3px] bg-sky-400" />
+            <span className="h-3 w-3 rounded-[3px] bg-amber-400" />
+            <span className="h-3 w-3 rounded-[3px] bg-orange-400" />
+            <span className="h-3 w-3 rounded-[3px] bg-rose-500" />
+            <span>Stronger</span>
+            <span className="ml-2 flex items-center gap-1">
+              <span className="h-3 w-3 rounded-[3px] bg-slate-100" />
+              Nothing logged
+            </span>
           </div>
         </motion.section>
       </div>
@@ -304,12 +362,21 @@ export function TriggerAnalyticsPage() {
           <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-600">Trigger Ranking</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-900">Most influential triggers</h2>
           <div className="mt-6 space-y-3">
-            {ranking.map((item) => (
-              <div key={item.label} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <span className="font-medium text-slate-800">{item.label}</span>
-                <span className="text-sm font-semibold text-indigo-600">{item.score}</span>
-              </div>
-            ))}
+            {ranking.length === 0 ? (
+              <p className="text-sm text-slate-500">No triggers logged yet.</p>
+            ) : (
+              ranking.map((item) => (
+                <div
+                  key={item.category}
+                  className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                >
+                  <span className="font-medium text-slate-800">{item.category}</span>
+                  <span className="text-sm font-semibold text-indigo-600">
+                    {item.averageIntensity.toFixed(1)}/10
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </motion.section>
 

@@ -19,10 +19,53 @@ export interface CategoryStat {
   averageIntensity: number;
 }
 
+export interface TriggerHeatCell {
+  /** MONDAY … SUNDAY. */
+  day: string;
+  /** Morning · Midday · Evening · Night. */
+  slot: string;
+  /** Null when nothing was logged in that cell — not the same as a calm zero. */
+  averageIntensity: number | null;
+  count: number;
+}
+
+export interface WeekdayStat {
+  day: string;
+  averageIntensity: number | null;
+  count: number;
+}
+
 export interface TriggerAnalytics {
   totalCount: number;
   averageIntensity: number;
   categories: CategoryStat[];
+  heatmap: TriggerHeatCell[];
+  weekdayIntensity: WeekdayStat[];
+}
+
+export const TRIGGER_SLOTS = ['Morning', 'Midday', 'Evening', 'Night'] as const;
+export const TRIGGER_DAYS = [
+  'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY',
+] as const;
+export const TRIGGER_DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/** Colour for a trigger-intensity cell. Null (no data) stays neutral, never "calm". */
+export function triggerHeatClass(intensity: number | null): string {
+  if (intensity === null || intensity === undefined) return 'bg-slate-100 dark:bg-slate-800';
+  if (intensity >= 7.5) return 'bg-rose-500';
+  if (intensity >= 5.5) return 'bg-orange-400';
+  if (intensity >= 3.5) return 'bg-amber-400';
+  if (intensity >= 1.5) return 'bg-sky-400';
+  return 'bg-emerald-400';
+}
+
+/** Look up one cell of the 7x4 grid. */
+export function findHeatCell(
+  cells: TriggerHeatCell[] | undefined,
+  day: string,
+  slot: string,
+): TriggerHeatCell | undefined {
+  return cells?.find((cell) => cell.day === day && cell.slot === slot);
 }
 
 export interface TriggerInput {
