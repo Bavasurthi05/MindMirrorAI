@@ -19,8 +19,17 @@ public interface AnalysisResultRepository extends JpaRepository<AnalysisResult, 
     List<AnalysisResult> findByUserIdAndSourceTypeAndStatusOrderByAnalyzedAtDesc(
             Long userId, AnalysisSourceType sourceType, AnalysisStatus status, Pageable pageable);
 
-    List<AnalysisResult> findByUserIdAndStatusAndAnalyzedAtAfterOrderByAnalyzedAtDesc(
-            Long userId, AnalysisStatus status, Instant after);
+    /**
+     * Completed analyses since a point in time, excluding one source.
+     *
+     * <p>Callers pass {@code SOCIAL}: an imported archive is analyzed all at once, so its rows
+     * would otherwise all land "today" and swamp the user's real day-to-day signal.
+     */
+    List<AnalysisResult> findByUserIdAndStatusAndSourceTypeNotAndAnalyzedAtAfterOrderByAnalyzedAtDesc(
+            Long userId, AnalysisStatus status, AnalysisSourceType excluded, Instant after);
+
+    List<AnalysisResult> findByUserIdAndStatusAndSourceTypeNotOrderByAnalyzedAtDesc(
+            Long userId, AnalysisStatus status, AnalysisSourceType excluded, Pageable pageable);
 
     Optional<AnalysisResult> findByIdAndUserId(Long id, Long userId);
 
@@ -30,5 +39,5 @@ public interface AnalysisResultRepository extends JpaRepository<AnalysisResult, 
     List<AnalysisResult> findByStatusAndAttemptCountLessThanOrderByIdAsc(
             AnalysisStatus status, int maxAttempts, Pageable pageable);
 
-    long countByUserIdAndStatus(Long userId, AnalysisStatus status);
+    long countByUserIdAndStatusAndSourceTypeNot(Long userId, AnalysisStatus status, AnalysisSourceType excluded);
 }

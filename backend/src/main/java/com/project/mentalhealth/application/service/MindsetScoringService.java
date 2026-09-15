@@ -1,6 +1,7 @@
 package com.project.mentalhealth.application.service;
 
 import com.project.mentalhealth.domain.model.AnalysisResult;
+import com.project.mentalhealth.domain.model.AnalysisSourceType;
 import com.project.mentalhealth.domain.model.AnalysisStatus;
 import com.project.mentalhealth.domain.model.AssessmentSubmission;
 import com.project.mentalhealth.domain.model.MoodEntry;
@@ -94,7 +95,8 @@ public class MindsetScoringService {
         Instant cutoff = Instant.now().minus(WINDOW_DAYS, ChronoUnit.DAYS);
 
         List<AnalysisResult> analyses = analysisRepository
-                .findByUserIdAndStatusAndAnalyzedAtAfterOrderByAnalyzedAtDesc(userId, AnalysisStatus.OK, cutoff);
+                .findByUserIdAndStatusAndSourceTypeNotAndAnalyzedAtAfterOrderByAnalyzedAtDesc(
+                        userId, AnalysisStatus.OK, AnalysisSourceType.SOCIAL, cutoff);
         List<MoodEntry> moods = moodRepository
                 .findByUserIdAndRecordedAtAfterOrderByRecordedAtDesc(userId, cutoff);
         List<TriggerEntry> triggers = triggerRepository

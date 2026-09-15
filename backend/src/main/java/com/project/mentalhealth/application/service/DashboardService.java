@@ -1,6 +1,7 @@
 package com.project.mentalhealth.application.service;
 
 import com.project.mentalhealth.domain.model.AnalysisResult;
+import com.project.mentalhealth.domain.model.AnalysisSourceType;
 import com.project.mentalhealth.domain.model.AnalysisStatus;
 import com.project.mentalhealth.domain.model.AssessmentSubmission;
 import com.project.mentalhealth.domain.model.EntrySource;
@@ -108,8 +109,9 @@ public class DashboardService {
         List<AssessmentSubmission> assessments = assessmentRepository.findByUserIdOrderBySubmittedAtDesc(userId);
         List<RecoveryAction> recoveryActions = recoveryRepository.findByUserIdOrderByIdAsc(userId);
         List<JournalEntry> journals = journalRepository.findByUserIdOrderByCreatedAtDesc(userId);
-        List<AnalysisResult> analyses = analysisRepository.findByUserIdAndStatusOrderByAnalyzedAtDesc(
-                userId, AnalysisStatus.OK, PageRequest.of(0, RECENT_ANALYSIS_COUNT));
+        // Imported social posts have their own view; left in, a bulk import would fill these cards.
+        List<AnalysisResult> analyses = analysisRepository.findByUserIdAndStatusAndSourceTypeNotOrderByAnalyzedAtDesc(
+                userId, AnalysisStatus.OK, AnalysisSourceType.SOCIAL, PageRequest.of(0, RECENT_ANALYSIS_COUNT));
 
         // One number across dashboard, mirror and reports: they previously each computed
         // their own "wellness" and could disagree with one another.
@@ -134,7 +136,8 @@ public class DashboardService {
                         .hasTriggers(!triggers.isEmpty())
                         .hasAnalysis(!analyses.isEmpty())
                         .daysOfData(daysOfData(journals, moods))
-                        .pendingAnalyses(analysisRepository.countByUserIdAndStatus(userId, AnalysisStatus.PENDING))
+                        .pendingAnalyses(analysisRepository.countByUserIdAndStatusAndSourceTypeNot(
+                                userId, AnalysisStatus.PENDING, AnalysisSourceType.SOCIAL))
                         .onboardingCompleted(preferencesService.preferencesOrDefaults(user).isOnboardingCompleted())
                         .daysSinceAssessment(daysSinceAssessment(assessments))
                         .build())

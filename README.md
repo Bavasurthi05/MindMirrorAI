@@ -59,7 +59,7 @@ from the result. An ML outage therefore never fails a save — the row is retrie
 | **Frontend** | React 18, TypeScript, Vite, Tailwind CSS (dark mode), React Router, React Query, Chart.js + react‑chartjs‑2, Framer Motion, jsPDF + html2canvas |
 | **Backend** | Spring Boot 3.3 (Java 21), Spring Web / Security / Data JPA / Validation, JJWT, Flyway, Lombok, Maven |
 | **ML Service** | FastAPI, Uvicorn, Pydantic, scikit‑learn (TF‑IDF + Random Forest), joblib; optional SHAP, Transformers/Torch (pluggable) |
-| **Database** | MySQL 8.0 (Flyway migrations `V1`–`V14`) |
+| **Database** | MySQL 8.0 (Flyway migrations `V1`–`V16`) |
 | **Ops** | Docker Compose, GitHub Actions CI |
 
 ---
@@ -78,7 +78,7 @@ from the result. An ML outage therefore never fails a save — the row is retrie
 | 8 | **Recovery Center** | Personalized recovery actions with completion tracking |
 | 9 | **Analytics Dashboard** | Radar, **heatmap calendar**, **emotion timeline**, mood/weekly trends, distributions |
 | 10 | **Reports** | Live report preview + **PDF export** (jsPDF/html2canvas) |
-| 11 | **Social Accounts** | Connect accounts, import posts/content for analysis, and review the resulting insights |
+| 11 | **Social Imports** | Upload your own X, Instagram or Facebook data export; your posts are analyzed in the background and shown as a monthly timeline, prediction mix, emotions and per-post readings — deletable at any time |
 | 12 | **Admin Panel** | Overview stats, **user management**, **model‑accuracy comparison**, **feedback review**, **retraining & model deployment** (versions, quality gate, promote/rollback) |
 | 13 | **Personalized Mindset** | Composite explainable score calibrated against each user's own baseline, reported as deviation ("1.4σ below your usual range") |
 
@@ -97,6 +97,34 @@ from the result. An ML outage therefore never fails a save — the row is retrie
   promotion → hot-swap → rollback, every step audited.
 - **A personalized mindset score** — one composite, explainable number that the dashboard, mirror and
   reports all agree on, calibrated against each user's own baseline.
+- **Social media imports** — users upload the data export each platform already offers, instead of
+  connecting accounts. See [Social imports](#social-imports) below for why.
+
+### Social imports
+
+X, Meta and Instagram APIs can't be used here: X's developer terms forbid inferring health from its
+data, Meta limits `user_posts` to narrow approved uses, and Instagram's personal-account API was shut
+down in December 2024. So the user downloads their own archive and uploads it.
+
+- **Accepted files:** the `.zip` archive, or the posts file from inside it — X `data/tweets.js`
+  (including `tweets-partN.js`), Instagram `posts_N.json`, Facebook `your_posts_N.json`. Up to 100 MB.
+- **Only the user's own words:** direct messages, deleted posts, other people's content and reposts
+  are never read. Photo-only posts and very short posts are skipped. Meta's byte-wise text encoding
+  is repaired.
+- **Nothing extra is kept:** the uploaded file is streamed, parsed and discarded. Only the text and date
+  of each post are stored. Zip archives are read with inflated-size and entry-count limits.
+- **Re-uploads are safe:** posts are de-duplicated per user and platform, so a newer archive only adds
+  new posts. Each upload keeps at most the 1,000 most recent new posts.
+- **Separate from daily tracking:** imported posts are analyzed through the batch ML endpoint (in
+  chunks of 50), but they don't create mood or trigger entries. They also don't affect the
+  dashboard, the mindset score or the baseline, because an old archive would otherwise show up as
+  today's mood. Insights are grouped by when each post was published.
+- **Consent and deletion:** uploading requires an explicit acknowledgement, which is recorded with the
+  import. Deleting an import removes its posts and their analyses. Imported posts are not used as
+  training data.
+
+Limits are configured under `app.social-import` in `application.yml`: `max-posts`, `min-text-length`,
+`max-upload-bytes`, `max-file-bytes` and `max-inflated-bytes`.
 
 **Data collection & consent:** daily buckets (streaks, heatmaps, "one check-in per day") use each
 user's own timezone. Using entries as **training data** is a separate, explicit, default-off opt-in,
@@ -157,13 +185,13 @@ MindMirrorAI/
 │   ├── src/main/java/com/project/mentalhealth/
 │   │   ├── domain/{model,repository}
 │   │   ├── application/{ports/in,ports/out,service}
-│   │   ├── infrastructure/{persistence,security,ml,email,async}
+│   │   ├── infrastructure/{persistence,security,ml,email,async,social}
 │   │   ├── interfaces/api/v1/{auth,journal,questionnaire,mood,trigger,checkin,
-│   │   │   recovery,report,analysis,analytics,goal,feedback,profile,admin,social}
+│   │   │   recovery,report,analysis,analytics,goal,feedback,profile,admin,social,socialimport}
 │   │   └── shared/
 │   └── src/main/resources/
 │       ├── application.yml
-│       └── db/migration/         # Flyway V1–V14
+│       └── db/migration/         # Flyway V1–V16
 ├── frontend/           # React + TS + Vite + Tailwind
 │   └── src/
 │       ├── pages/
@@ -251,7 +279,8 @@ Base path: `/api/v1`
 | Analytics | `GET /analytics/dashboard` · `GET /analytics/mindset` · `GET /analytics/overview` · `GET /analytics/weekly-insights` |
 | Triggers / Recovery / Reports | `GET,POST /triggers` · `GET /triggers/pending` · `PATCH /triggers/{id}/confirm` · `PATCH /triggers/{id}/dismiss` · `GET /recovery` · `GET /reports/summary` |
 | Goals / Feedback / Profile | `GET,POST /goals` · `POST /feedback` · `GET /me/profile` · `PATCH /me/profile` · `POST /me/password` · `GET,PATCH /me/preferences` |
-| Social Accounts | `GET /social-accounts` · `POST /social-accounts/connect` · `DELETE /social-accounts/{id}` · `POST /social-accounts/import` |
+| Social Imports | `POST /social-imports` (multipart: `provider` = `x`/`instagram`/`facebook`, `file`, `acknowledged`) · `GET /social-imports` · `GET /social-imports/{id}` · `DELETE /social-imports/{id}` · `GET /social-imports/insights` |
+| Social Accounts (legacy) | `GET /social-accounts` · `POST /social-accounts/connect` · `DELETE /social-accounts/{id}` · `POST /social-accounts/import` — not used by the UI; kept for API compatibility |
 | Admin | `GET /admin/overview` · `GET /admin/users` · `PATCH /admin/users/{id}/enabled` · `GET /admin/feedback` · `GET /admin/model-metrics` · `GET /admin/prediction-feedback` · `GET /admin/prediction-feedback/stats` · `GET /admin/training-data/summary` · `POST /admin/models/retrain` · `GET /admin/models/runs` · `GET /admin/models/versions` · `POST /admin/models/promote` · `POST /admin/models/rollback` |
 
 ML service (internal): `POST /analyze/journal` · `POST /analyze/social` · `POST /analyze/batch` ·
@@ -286,19 +315,21 @@ produced it.
 ## Testing
 
 ```bash
-# Frontend — 56 tests
+# Frontend — 78 tests
 cd frontend && npm run test        # Vitest
 
 # ML service — 37 tests
 cd ml-service && python -m pytest  # pytest
 
-# Backend — 79 tests
+# Backend — 169 tests
 cd backend && mvn test             # JUnit
 ```
 
 Backend and ML tests cover the parts that must not drift: the promotion gate's conditions, corpus
 assembly and per-user caps, consent filtering and PII scrubbing, the composite score's weight
-renormalization and its refusal to score on thin data, timezone-aware day bucketing, and the
-analysis retry path when the ML service is down.
+renormalization and its refusal to score on thin data, timezone-aware day bucketing, the
+analysis retry path when the ML service is down, and social export parsing (direct messages and
+reposts left out, Meta encoding repair, zip-bomb limits, de-duplication, per-import caps, and no mood
+or trigger entries created from imported posts).
 
 CI runs on GitHub Actions (`.github/workflows/ci.yml`).

@@ -1,5 +1,11 @@
 # Social Accounts Integration Plan
 
+> **Superseded (2026-09-15).** Live account connections were not built: X's developer terms forbid
+> inferring health from its data, Meta limits `user_posts` to narrow approved uses, and Instagram's
+> personal-account API was shut down in December 2024. What shipped instead is user-uploaded
+> data exports (`/social-imports`, migration `V16`); see "Social imports" in the README. The rest of
+> this document is kept for history.
+
 ## Status Summary
 
 The current repository does not yet implement real social-account connection flows.

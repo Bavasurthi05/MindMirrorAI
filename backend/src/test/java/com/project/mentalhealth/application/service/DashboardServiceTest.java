@@ -1,5 +1,6 @@
 package com.project.mentalhealth.application.service;
 
+import com.project.mentalhealth.domain.model.AnalysisSourceType;
 import com.project.mentalhealth.domain.model.AnalysisStatus;
 import com.project.mentalhealth.domain.model.JournalEntry;
 import com.project.mentalhealth.domain.model.MoodEntry;
@@ -75,9 +76,9 @@ class DashboardServiceTest {
         given(assessmentRepository.findByUserIdOrderBySubmittedAtDesc(anyLong())).willReturn(List.of());
         given(recoveryRepository.findByUserIdOrderByIdAsc(anyLong())).willReturn(List.of());
         given(journalRepository.findByUserIdOrderByCreatedAtDesc(anyLong())).willReturn(List.of());
-        given(analysisRepository.findByUserIdAndStatusOrderByAnalyzedAtDesc(anyLong(), any(), any()))
+        given(analysisRepository.findByUserIdAndStatusAndSourceTypeNotOrderByAnalyzedAtDesc(anyLong(), any(), any(), any()))
                 .willReturn(List.of());
-        given(analysisRepository.countByUserIdAndStatus(anyLong(), any())).willReturn(0L);
+        given(analysisRepository.countByUserIdAndStatusAndSourceTypeNot(anyLong(), any(), any())).willReturn(0L);
         given(preferencesService.zoneFor(anyLong())).willReturn(ZoneOffset.UTC);
         given(preferencesService.preferencesOrDefaults(any())).willReturn(new UserPreferences());
         given(checkInService.checkInStreak(anyLong(), any())).willReturn(0);
@@ -240,7 +241,8 @@ class DashboardServiceTest {
 
     @Test
     void pendingAnalysesAreReportedForTheAnalyzingState() {
-        given(analysisRepository.countByUserIdAndStatus(1L, AnalysisStatus.PENDING)).willReturn(2L);
+        given(analysisRepository.countByUserIdAndStatusAndSourceTypeNot(1L, AnalysisStatus.PENDING, AnalysisSourceType.SOCIAL))
+                .willReturn(2L);
 
         assertThat(service.dashboard("user@example.com").getDataCompleteness().getPendingAnalyses())
                 .isEqualTo(2);

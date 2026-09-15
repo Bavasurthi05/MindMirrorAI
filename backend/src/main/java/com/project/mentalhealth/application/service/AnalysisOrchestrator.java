@@ -25,7 +25,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Single entry point for analyzing user text and persisting the result.
@@ -152,7 +156,10 @@ public class AnalysisOrchestrator {
                     ? mlAnalysisPort.analyzeSocial(result.getSourceText())
                     : mlAnalysisPort.analyzeJournal(result.getSourceText());
             apply(result, analysis);
-            deriveSignals(result, analysis);
+            // Retries reach here too, so the social exclusion has to hold on this path as well.
+            if (derivesSignals(result.getSourceType())) {
+                deriveSignals(result, analysis);
+            }
             return analysis;
         } catch (Exception ex) {
             result.setStatus(AnalysisStatus.FAILED);
@@ -161,6 +168,82 @@ public class AnalysisOrchestrator {
                     result.getId(), result.getAttemptCount(), ex.getMessage());
             return null;
         }
+    }
+
+    /** One text in a batch, tagged with the id of the record it came from. */
+    public record BatchItem(Long sourceId, String text) {}
+
+    /**
+     * Analyze up to {@link MlAnalysisPort#MAX_BATCH_SIZE} texts in one ML round trip and store
+     * a row for each.
+     *
+     * <p>Joins the caller's transaction. A failed call, or an item the ML service could not
+     * analyze, is stored as {@code FAILED} rather than thrown, so the retry job picks it up.
+     */
+    @Transactional
+    public List<AnalysisResult> recordBatch(User user, AnalysisSourceType sourceType, List<BatchItem> items) {
+        if (items.isEmpty()) {
+            return List.of();
+        }
+        if (items.size() > MlAnalysisPort.MAX_BATCH_SIZE) {
+            throw new IllegalArgumentException("At most " + MlAnalysisPort.MAX_BATCH_SIZE + " items per batch");
+        }
+
+        List<AnalysisResult> pending = new ArrayList<>();
+        for (BatchItem item : items) {
+            AnalysisResult row = new AnalysisResult();
+            row.setUser(user);
+            row.setSourceType(sourceType);
+            row.setSourceId(item.sourceId());
+            row.setSourceText(item.text());
+            row.setStatus(AnalysisStatus.PENDING);
+            pending.add(row);
+        }
+        // Saved first: the generated ids are the references that match results back to rows.
+        List<AnalysisResult> rows = analysisRepository.saveAll(pending);
+
+        Map<String, MlAnalysisPort.BatchAnalysisResult> byReference;
+        try {
+            byReference = mlAnalysisPort.analyzeBatch(rows.stream()
+                            .map(row -> new MlAnalysisPort.BatchAnalysisItem(String.valueOf(row.getId()), row.getSourceText()))
+                            .toList())
+                    .stream()
+                    .collect(Collectors.toMap(MlAnalysisPort.BatchAnalysisResult::reference, Function.identity(),
+                            (first, second) -> first));
+        } catch (Exception ex) {
+            log.warn("Batch analysis of {} {} items failed: {}", rows.size(), sourceType, ex.getMessage());
+            for (AnalysisResult row : rows) {
+                row.setAttemptCount(row.getAttemptCount() + 1);
+                row.setStatus(AnalysisStatus.FAILED);
+                row.setErrorMessage(truncate(ex.getMessage()));
+            }
+            return analysisRepository.saveAll(rows);
+        }
+
+        for (AnalysisResult row : rows) {
+            row.setAttemptCount(row.getAttemptCount() + 1);
+            MlAnalysisPort.BatchAnalysisResult outcome = byReference.get(String.valueOf(row.getId()));
+            if (outcome == null || outcome.analysis() == null) {
+                row.setStatus(AnalysisStatus.FAILED);
+                row.setErrorMessage(truncate(outcome == null ? "No result returned for this item" : outcome.error()));
+                continue;
+            }
+            apply(row, outcome.analysis());
+            if (derivesSignals(sourceType)) {
+                deriveSignals(row, outcome.analysis());
+            }
+        }
+        return analysisRepository.saveAll(rows);
+    }
+
+    /**
+     * Whether an analysis should write mood and trigger entries.
+     *
+     * <p>Not for imported social posts: a years-old archive analyzed today would add hundreds of
+     * mood entries dated today and bury the user's real day-to-day signal.
+     */
+    static boolean derivesSignals(AnalysisSourceType sourceType) {
+        return sourceType != AnalysisSourceType.SOCIAL;
     }
 
     private void apply(AnalysisResult result, MlAnalysisPort.JournalAnalysis analysis) {

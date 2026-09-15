@@ -2,6 +2,7 @@ package com.project.mentalhealth.application.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.mentalhealth.domain.model.AnalysisResult;
+import com.project.mentalhealth.domain.model.AnalysisSourceType;
 import com.project.mentalhealth.domain.model.AnalysisStatus;
 import com.project.mentalhealth.domain.model.JournalEntry;
 import com.project.mentalhealth.domain.model.MoodEntry;
@@ -107,7 +108,8 @@ public class BaselineService {
         Instant cutoff = Instant.now().minus(WINDOW_DAYS, ChronoUnit.DAYS);
 
         List<AnalysisResult> analyses = analysisRepository
-                .findByUserIdAndStatusAndAnalyzedAtAfterOrderByAnalyzedAtDesc(userId, AnalysisStatus.OK, cutoff)
+                .findByUserIdAndStatusAndSourceTypeNotAndAnalyzedAtAfterOrderByAnalyzedAtDesc(
+                        userId, AnalysisStatus.OK, AnalysisSourceType.SOCIAL, cutoff)
                 .stream()
                 .limit(MAX_ANALYSES)
                 .toList();

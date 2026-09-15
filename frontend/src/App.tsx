@@ -20,7 +20,7 @@ import { ReportPreviewPage } from './pages/ReportPreviewPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { PredictionResultsPage } from './pages/PredictionResultsPage';
 import { SocialMediaAnalysisPage } from './pages/SocialMediaAnalysisPage';
-import { SocialAccountsPage } from './pages/SocialAccountsPage';
+import { SocialImportPage } from './pages/SocialImportPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { WeeklyInsightsPage } from './pages/WeeklyInsightsPage';
 import { EmergencyHelpPage } from './pages/EmergencyHelpPage';
@@ -47,7 +47,7 @@ function App() {
         <Route path="/journal" element={<JournalPage />} />
         <Route path="/questionnaire" element={<QuestionnairePage />} />
         <Route path="/social-analysis" element={<SocialMediaAnalysisPage />} />
-        <Route path="/social-accounts" element={<SocialAccountsPage />} />
+        <Route path="/social-accounts" element={<SocialImportPage />} />
         <Route path="/mirror" element={<MirrorPage />} />
         <Route path="/prediction-results" element={<PredictionResultsPage />} />
         <Route path="/trigger-analytics" element={<TriggerAnalyticsPage />} />

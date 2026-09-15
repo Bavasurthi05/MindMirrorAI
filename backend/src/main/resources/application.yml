@@ -18,6 +18,11 @@ spring:
   sql:
     init:
       mode: never
+  servlet:
+    multipart:
+      # Data exports can be large; the social import parser applies its own, tighter limits.
+      max-file-size: ${SOCIAL_IMPORT_MAX_UPLOAD:100MB}
+      max-request-size: ${SOCIAL_IMPORT_MAX_REQUEST:101MB}
   flyway:
     enabled: true
     baseline-on-migrate: true
@@ -50,6 +55,15 @@ app:
       # Weekly run that stops at the gate; promotion always stays a human decision.
       scheduled-enabled: ${ML_TRAINING_SCHEDULED:false}
       cron: ${ML_TRAINING_CRON:0 0 3 * * SUN}
+  social-import:
+    # Most recent posts analyzed per upload; bounds ML cost and time for large archives.
+    max-posts: ${SOCIAL_IMPORT_MAX_POSTS:1000}
+    min-text-length: ${SOCIAL_IMPORT_MIN_TEXT_LENGTH:15}
+    max-upload-bytes: ${SOCIAL_IMPORT_MAX_UPLOAD_BYTES:104857600}
+    # Largest single posts file read out of an archive.
+    max-file-bytes: ${SOCIAL_IMPORT_MAX_FILE_BYTES:52428800}
+    # Total bytes inflated across an archive; the guard against zip bombs.
+    max-inflated-bytes: ${SOCIAL_IMPORT_MAX_INFLATED_BYTES:1073741824}
   baseline:
     cron: ${BASELINE_CRON:0 30 2 * * *}
   analysis:

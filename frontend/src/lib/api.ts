@@ -80,7 +80,9 @@ interface RequestOptions {
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, auth = true, signal } = options;
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  // FormData sets its own multipart boundary; forcing a JSON content type would break uploads.
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  const headers: Record<string, string> = isFormData ? {} : { 'Content-Type': 'application/json' };
 
   if (auth) {
     const token = getToken();
@@ -90,7 +92,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body === undefined ? undefined : isFormData ? (body as FormData) : JSON.stringify(body),
     signal,
   });
 

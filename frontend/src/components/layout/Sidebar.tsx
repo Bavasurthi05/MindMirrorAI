@@ -12,7 +12,7 @@ const navItems = [
   { label: 'Journal', to: '/journal' },
   { label: 'Questionnaire', to: '/questionnaire' },
   { label: 'Social Media', to: '/social-analysis' },
-  { label: 'Social Accounts', to: '/social-accounts' },
+  { label: 'Import Posts', to: '/social-accounts' },
   { label: 'Mirror', to: '/mirror' },
   { label: 'Analytics', to: '/analytics' },
   { label: 'Insights', to: '/weekly-insights' },

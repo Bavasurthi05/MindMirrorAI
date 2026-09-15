@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -191,5 +192,135 @@ class AnalysisOrchestratorTest {
         assertThat(AnalysisOrchestrator.toMoodScore(0.0)).isEqualTo(50);
         assertThat(AnalysisOrchestrator.toMoodScore(1.0)).isEqualTo(100);
         assertThat(AnalysisOrchestrator.toMoodScore(5.0)).isEqualTo(100); // clamped
+    }
+
+    // --- Batch recording ------------------------------------------------------------------
+
+    private void echoSaveAllWithIds() {
+        java.util.concurrent.atomic.AtomicLong ids = new java.util.concurrent.atomic.AtomicLong(100);
+        given(analysisRepository.saveAll(any())).willAnswer(invocation -> {
+            List<AnalysisResult> rows = invocation.getArgument(0);
+            rows.forEach(row -> {
+                if (row.getId() == null) {
+                    row.setId(ids.getAndIncrement());
+                }
+            });
+            return rows;
+        });
+    }
+
+    private List<AnalysisOrchestrator.BatchItem> twoItems() {
+        return List.of(new AnalysisOrchestrator.BatchItem(1L, "first post text"),
+                new AnalysisOrchestrator.BatchItem(2L, "second post text"));
+    }
+
+    @Test
+    void recordBatchStoresEachResultAndNeverDerivesSignalsFromSocialPosts() {
+        echoSaveAllWithIds();
+        MlAnalysisPort.JournalAnalysis withTrigger = analysis(-0.5, "fear",
+                List.of(new MlAnalysisPort.DetectedTrigger("Workload", List.of("deadline"), 8)));
+        given(mlAnalysisPort.analyzeBatch(any())).willReturn(List.of(
+                new MlAnalysisPort.BatchAnalysisResult("100", withTrigger, null),
+                new MlAnalysisPort.BatchAnalysisResult("101", withTrigger, null)));
+
+        List<AnalysisResult> rows = orchestrator.recordBatch(user, AnalysisSourceType.SOCIAL, twoItems());
+
+        assertThat(rows).allSatisfy(row -> {
+            assertThat(row.getStatus()).isEqualTo(AnalysisStatus.OK);
+            assertThat(row.getSourceType()).isEqualTo(AnalysisSourceType.SOCIAL);
+        });
+        assertThat(rows).extracting(AnalysisResult::getSourceId).containsExactly(1L, 2L);
+        // A years-old archive must not become mood and trigger entries dated today.
+        verify(moodRepository, never()).save(any(MoodEntry.class));
+        verify(triggerRepository, never()).save(any(TriggerEntry.class));
+    }
+
+    @Test
+    void recordBatchStillDerivesSignalsForJournalEntries() {
+        echoSaveAllWithIds();
+        given(moodRepository.findByUserIdAndRecordedAtAfterOrderByRecordedAtDesc(anyLong(), any())).willReturn(List.of());
+        given(mlAnalysisPort.analyzeBatch(any())).willReturn(List.of(
+                new MlAnalysisPort.BatchAnalysisResult("100", analysis(0.4, "joy", List.of()), null)));
+
+        orchestrator.recordBatch(user, AnalysisSourceType.JOURNAL,
+                List.of(new AnalysisOrchestrator.BatchItem(1L, "a journal entry")));
+
+        verify(moodRepository).save(any(MoodEntry.class));
+    }
+
+    @Test
+    void anItemMissingFromTheBatchResponseIsMarkedFailed() {
+        echoSaveAllWithIds();
+        given(mlAnalysisPort.analyzeBatch(any())).willReturn(List.of(
+                new MlAnalysisPort.BatchAnalysisResult("100", analysis(0.1, "calm", List.of()), null)));
+
+        List<AnalysisResult> rows = orchestrator.recordBatch(user, AnalysisSourceType.SOCIAL, twoItems());
+
+        assertThat(rows.get(0).getStatus()).isEqualTo(AnalysisStatus.OK);
+        assertThat(rows.get(1).getStatus()).isEqualTo(AnalysisStatus.FAILED);
+        assertThat(rows.get(1).getErrorMessage()).contains("No result");
+    }
+
+    @Test
+    void aPerItemErrorFromTheMlServiceIsRecorded() {
+        echoSaveAllWithIds();
+        given(mlAnalysisPort.analyzeBatch(any())).willReturn(List.of(
+                new MlAnalysisPort.BatchAnalysisResult("100", analysis(0.1, "calm", List.of()), null),
+                new MlAnalysisPort.BatchAnalysisResult("101", null, "model exploded")));
+
+        List<AnalysisResult> rows = orchestrator.recordBatch(user, AnalysisSourceType.SOCIAL, twoItems());
+
+        assertThat(rows.get(1).getStatus()).isEqualTo(AnalysisStatus.FAILED);
+        assertThat(rows.get(1).getErrorMessage()).isEqualTo("model exploded");
+    }
+
+    @Test
+    void whenTheMlServiceIsDownTheWholeBatchIsStoredAsFailedForRetry() {
+        echoSaveAllWithIds();
+        given(mlAnalysisPort.analyzeBatch(any()))
+                .willThrow(new ApiException("ML service is unavailable", HttpStatus.SERVICE_UNAVAILABLE));
+
+        List<AnalysisResult> rows = orchestrator.recordBatch(user, AnalysisSourceType.SOCIAL, twoItems());
+
+        assertThat(rows).allSatisfy(row -> {
+            assertThat(row.getStatus()).isEqualTo(AnalysisStatus.FAILED);
+            assertThat(row.getAttemptCount()).isEqualTo(1);
+            assertThat(row.getErrorMessage()).contains("unavailable");
+        });
+    }
+
+    @Test
+    void aBatchOverTheMlLimitIsRejected() {
+        List<AnalysisOrchestrator.BatchItem> tooMany = java.util.stream.LongStream.rangeClosed(1, 51)
+                .mapToObj(id -> new AnalysisOrchestrator.BatchItem(id, "text"))
+                .toList();
+
+        assertThatThrownBy(() -> orchestrator.recordBatch(user, AnalysisSourceType.SOCIAL, tooMany))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void anEmptyBatchDoesNothing() {
+        assertThat(orchestrator.recordBatch(user, AnalysisSourceType.SOCIAL, List.of())).isEmpty();
+        verify(mlAnalysisPort, never()).analyzeBatch(any());
+    }
+
+    @Test
+    void retryingASocialAnalysisDoesNotDeriveSignalsEither() {
+        echoSave();
+        given(mlAnalysisPort.analyzeSocial(anyString())).willReturn(analysis(-0.6, "sadness",
+                List.of(new MlAnalysisPort.DetectedTrigger("Social", List.of("lonely"), 9))));
+
+        orchestrator.submitAndWait(user, AnalysisSourceType.SOCIAL, 3L, "an imported post");
+
+        verify(moodRepository, never()).save(any(MoodEntry.class));
+        verify(triggerRepository, never()).save(any(TriggerEntry.class));
+    }
+
+    @Test
+    void onlySocialPostsAreExcludedFromDerivation() {
+        assertThat(AnalysisOrchestrator.derivesSignals(AnalysisSourceType.SOCIAL)).isFalse();
+        assertThat(AnalysisOrchestrator.derivesSignals(AnalysisSourceType.JOURNAL)).isTrue();
+        assertThat(AnalysisOrchestrator.derivesSignals(AnalysisSourceType.CHECKIN)).isTrue();
     }
 }
